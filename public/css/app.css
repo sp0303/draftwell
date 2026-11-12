@@ -444,3 +444,41 @@ p{margin:0}
 .proof-act .link{font-size:12.5px;color:var(--muted)}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .pane.ats,.proof-change{position:relative}
+
+/* admin: AI usage */
+.ai-usage{margin-top:36px;display:grid;gap:14px}
+.ai-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.ai-head h2,.users-h{font-size:22px}
+.ai-head span{font-size:13px;color:var(--muted)}
+.users-h{margin-top:40px}
+.ai-usage .stats{margin-top:0}
+.stats .wide{grid-column:span 2;min-width:0}
+.stats .model{font-family:var(--f-body);font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ai-free{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;gap:8px}
+.ai-free-row{display:flex;justify-content:space-between;gap:12px;font-size:14px;flex-wrap:wrap}
+.ai-free-row b{font-family:var(--f-grotesk);font-variant-numeric:tabular-nums}
+.ai-free p{font-size:12.5px;color:var(--muted)}
+.ai-bar{height:8px;border-radius:999px;background:var(--surface-2);overflow:hidden;flex:1}
+.ai-bar i{display:block;height:100%;border-radius:999px;background:var(--ok)}
+.ai-bar.warm i{background:var(--warn)}
+.ai-bar.hot i{background:var(--danger)}
+.admin-table .mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12.5px}
+.admin-table .ok{color:var(--ok)}
+.admin-table .bad{color:var(--danger)}
+.ai-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px}
+.ai-split h3{font-size:15px;margin-bottom:8px;font-family:var(--f-body);font-weight:600;letter-spacing:0}
+.ai-tasks{display:flex;flex-wrap:wrap;gap:8px}
+.ai-task{background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:13px}
+.ai-task b{font-family:var(--f-grotesk);font-variant-numeric:tabular-nums}
+.ai-task em{font-style:normal;color:var(--danger);font-size:12px}
+.ai-days{display:grid;gap:6px}
+.ai-dayrow{display:grid;grid-template-columns:44px minmax(0,1fr) 40px;gap:10px;align-items:center;font-size:12.5px;color:var(--muted)}
+.ai-dayrow b{text-align:right;color:var(--fg);font-variant-numeric:tabular-nums}
+.ai-dayrow .ai-bar i{background:var(--accent)}
+.ai-recent summary{cursor:pointer;font-size:14px;font-weight:600;padding:4px 0}
+.res{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px}
+.res.ok{color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,transparent)}
+.res.bad{color:var(--danger);background:color-mix(in srgb,var(--danger) 12%,transparent)}
+.empty{color:var(--muted);font-size:13px}
+@media (max-width:700px){.ai-split{grid-template-columns:1fr}.stats .wide{grid-column:1/-1}}
+.ai-note{font-size:13px;color:var(--muted);margin-top:-6px}

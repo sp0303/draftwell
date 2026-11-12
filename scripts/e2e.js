@@ -301,6 +301,20 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
     assert.equal(anaRow.credits, 0); assert.equal(anaRow.creditsUsed, 4); assert.equal(anaRow.aiRequests, 2);
     assert.equal(anaRow.pdfDownloads, 1); assert.equal(anaRow.uploads, up ? 1 : 0); assert.equal(anaRow.resumes, up ? 2 : 1);
     assert.equal(r.json.totals.users, 3); ok('admin sees every user with credits, AI use, uploads, PDF downloads and resumes');
+    // AI usage log: two OpenRouter attempts (one busy) and one NVIDIA answer.
+    const ailog = require('../src/ailog');
+    ailog.record({ task: 'chat', provider: 'openrouter', model: 'google/gemma-4-31b-it:free', ok: false, ms: 300, tokens: 0, error: '429 rate limited' });
+    ailog.record({ task: 'chat', provider: 'nvidia', model: 'minimaxai/minimax-m3.1-flash', ok: true, ms: 2500, tokens: 1400 });
+    ailog.record({ task: 'spelling', provider: 'openrouter', model: 'baidu/ernie-5.5-flash-preview:free', ok: true, ms: 1800, tokens: 900 });
+    await new Promise((res) => setTimeout(res, 200));
+    r = await call('GET', '/api/admin/ai');
+    assert.equal(r.status, 200); assert.equal(r.json.totals.calls, 3); assert.equal(r.json.totals.failed, 1);
+    assert.equal(r.json.openrouterFree.used, 2); assert.equal(r.json.openrouterFree.limit, 50);
+    assert.ok(['openrouter', 'nvidia'].includes(r.json.lastAnswer.provider)); // both answers share a timestamp here
+    assert.ok(r.json.models.some((m) => m.provider === 'nvidia' && m.ok === 1 && m.tokens === 1400));
+    assert.deepEqual(r.json.tasks.map((x) => x.task).sort(), ['chat', 'spelling']);
+    assert.equal(r.json.recent.length, 3); assert.equal(r.json.days.at(-1).calls, 3);
+    ok('admin AI usage: requests today by provider and model, OpenRouter free count, tasks, last 7 days, latest calls');
     r = await call('POST', `/api/admin/users/${anaRow.id}/credits`, { add: 50 });
     assert.equal(r.status, 200); assert.equal(r.json.credits, 50);
     r = await call('POST', `/api/admin/users/${anaRow.id}/credits`, { set: 500 });

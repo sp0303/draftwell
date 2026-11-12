@@ -17,6 +17,7 @@ const SAMPLE = require('./sample');
 const auth = require('./auth');
 const credits = require('./credits');
 const ats = require('./ats');
+const ailog = require('./ailog');
 const proofread = require('./proofread');
 const { limit } = require('./limit');
 
@@ -177,6 +178,7 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
 
   const api = express.Router();
   api.use(wrap(auth.loadUser));
+  api.use(ailog.context); // AI attempts in this request are logged under this user
 
   api.get('/me', (req, res) => res.json({
     user: auth.publicUser(req.user),

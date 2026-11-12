@@ -286,6 +286,34 @@
         <button class="btn" id="admin-refresh" type="button">Refresh</button>
       </div>
       <div class="stats" id="admin-totals"></div>
+
+      <section class="ai-usage" aria-labelledby="ai-h">
+        <div class="ai-head"><h2 id="ai-h">AI today</h2><span id="ai-day"></span></div>
+        <p class="ai-note">Every try at a model counts as one request, the same way OpenRouter counts them. One chat message can take several tries when a model is busy.</p>
+        <div class="stats" id="ai-totals"></div>
+        <div class="ai-free" id="ai-free"></div>
+        <div class="table-wrap">
+          <table class="admin-table">
+            <thead><tr><th>Provider</th><th>Model</th><th class="num">Requests</th><th class="num">Answered</th><th class="num">Failed</th><th class="num">Avg time</th><th class="num">Tokens</th><th>Last used</th></tr></thead>
+            <tbody id="ai-models"></tbody>
+          </table>
+        </div>
+        <div class="ai-split">
+          <div><h3>By task today</h3><div class="ai-tasks" id="ai-tasks"></div></div>
+          <div><h3>Last 7 days</h3><div class="ai-days" id="ai-days"></div></div>
+        </div>
+        <details class="ai-recent">
+          <summary>Latest 25 AI requests</summary>
+          <div class="table-wrap">
+            <table class="admin-table">
+              <thead><tr><th>When</th><th>User</th><th>Task</th><th>Provider</th><th>Model</th><th>Result</th><th class="num">Time</th><th class="num">Tokens</th></tr></thead>
+              <tbody id="ai-recent"></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+
+      <h2 class="users-h">Users</h2>
       <input class="admin-search" id="admin-search" type="search" placeholder="Search by name or email" aria-label="Search users">
       <div class="table-wrap">
         <table class="admin-table">

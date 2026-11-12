@@ -19,6 +19,9 @@ async function connect(url = config.mongoUrl) {
     // Sessions nobody has used for 180 days are removed automatically.
     col('sessions').createIndex({ lastSeenAt: 1 }, { expireAfterSeconds: 180 * 24 * 3600 }),
     col('resumes').createIndex({ userId: 1, updatedAt: -1 }),
+    // AI attempts for the admin page, removed after 30 days.
+    col('ai_calls').createIndex({ at: 1 }, { expireAfterSeconds: 30 * 24 * 3600 }),
+    col('ai_calls').createIndex({ day: 1, provider: 1, model: 1 }),
   ]);
   return db;
 }

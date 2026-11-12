@@ -15,6 +15,8 @@ module.exports = {
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   cookieSecure: process.env.COOKIE_SECURE === 'true',
   maxUploadBytes: 10 * 1024 * 1024,
+  // OpenRouter's daily cap on free models: 50, or 1000 once $10 of credit has ever been bought.
+  openrouterDailyLimit: Number(process.env.OPENROUTER_DAILY_LIMIT) || 50,
   // AI credits a new account starts with (1 credit = 1,000 model tokens).
   startingCredits: Number.isFinite(Number(process.env.AI_STARTING_CREDITS)) && process.env.AI_STARTING_CREDITS !== ''
     ? Number(process.env.AI_STARTING_CREDITS) : 100,

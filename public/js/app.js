@@ -621,9 +621,47 @@
   };
   async function renderAdmin() {
     try {
-      adminData = await api('GET', '/api/admin/users');
-      drawAdmin();
+      const [users, ai] = await Promise.all([api('GET', '/api/admin/users'), api('GET', '/api/admin/ai')]);
+      adminData = users;
+      drawAdmin(); drawAiUsage(ai);
     } catch (e) { toast(e.message); }
+  }
+  const PROVIDER = { openrouter: 'OpenRouter', nvidia: 'NVIDIA' };
+  const secs = (ms) => `${(ms / 1000).toFixed(1)} s`;
+  function drawAiUsage(a) {
+    const t = a.totals;
+    $('#ai-day').textContent = `${a.day} (UTC)`;
+    const last = a.lastAnswer ? `${PROVIDER[a.lastAnswer.provider] || a.lastAnswer.provider} · ${a.lastAnswer.model}` : '—';
+    $('#ai-totals').innerHTML = [[fmtN(t.calls), 'Requests'], [fmtN(t.ok), 'Answered'], [fmtN(t.failed), 'Failed or busy'], [fmtN(t.tokens), 'Tokens']]
+      .map(([v, l]) => `<div><b>${v}</b><span>${l}</span></div>`).join('')
+      + `<div class="wide"><b class="model">${esc(last)}</b><span>Last answered by${a.lastAnswer ? ` · ${when(a.lastAnswer.at)}` : ''}</span></div>`;
+    const f = a.openrouterFree;
+    const pct = Math.min(100, Math.round((f.used / f.limit) * 100));
+    $('#ai-free').innerHTML = `<div class="ai-free-row"><span>OpenRouter free requests today</span><b>${fmtN(f.used)} of ${fmtN(f.limit)}</b></div>
+      <div class="ai-bar${pct >= 90 ? ' hot' : pct >= 60 ? ' warm' : ''}"><i style="width:${pct}%"></i></div>
+      <p>${f.used >= f.limit ? 'Used up for today: requests now go to NVIDIA, then the built-in rules.' : `Resets at midnight UTC. Failed attempts count too.`}</p>`;
+    $('#ai-models').innerHTML = a.models.length ? a.models.map((m) => `<tr>
+      <td>${esc(PROVIDER[m.provider] || m.provider)}</td><td class="mono">${esc(m.model)}</td>
+      <td class="num">${fmtN(m.calls)}</td><td class="num ok">${fmtN(m.ok)}</td><td class="num${m.failed ? ' bad' : ''}">${fmtN(m.failed)}</td>
+      <td class="num">${secs(m.avgMs)}</td><td class="num">${fmtN(m.tokens)}</td><td>${when(m.last)}</td></tr>`).join('')
+      : '<tr><td colspan="8" class="empty">No AI requests yet today.</td></tr>';
+    $('#ai-tasks').innerHTML = a.tasks.length ? a.tasks.map((x) => `<span class="ai-task"><b>${fmtN(x.calls)}</b> ${esc(x.task)}${x.calls > x.ok ? ` <em>${x.calls - x.ok} failed</em>` : ''}</span>`).join('') : '<span class="empty">None yet</span>';
+    const max = Math.max(1, ...a.days.map((d) => d.calls));
+    $('#ai-days').innerHTML = a.days.length ? a.days.map((d) => `<div class="ai-dayrow"><span>${esc(d.day.slice(5))}</span><div class="ai-bar"><i style="width:${(d.calls / max) * 100}%"></i></div><b>${fmtN(d.calls)}</b></div>`).join('') : '<span class="empty">No requests yet</span>';
+    $('#ai-recent').innerHTML = a.recent.length ? a.recent.map((c) => `<tr>
+      <td title="${esc(new Date(c.at).toLocaleString())}">${when(c.at)}</td><td>${esc(c.email || '—')}</td><td>${esc(c.task)}</td>
+      <td>${esc(PROVIDER[c.provider] || c.provider)}</td><td class="mono">${esc(c.model)}</td>
+      <td>${c.ok ? '<span class="res ok">Answered</span>' : `<span class="res bad" title="${esc(c.error || '')}">${esc(shortErr(c.error))}</span>`}</td>
+      <td class="num">${secs(c.ms)}</td><td class="num">${fmtN(c.tokens)}</td></tr>`).join('')
+      : '<tr><td colspan="8" class="empty">No AI requests yet.</td></tr>';
+  }
+  function shortErr(e) {
+    const s = String(e || '');
+    if (/timed out/i.test(s)) return 'Timed out';
+    if (/429|rate/i.test(s)) return 'Busy (rate limit)';
+    if (/404/.test(s)) return 'Not available';
+    if (/not JSON|missing required/i.test(s)) return 'Bad reply';
+    return 'Failed';
   }
   function drawAdmin() {
     if (!adminData) return;

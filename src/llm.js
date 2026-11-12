@@ -9,6 +9,7 @@
 
 const config = require('./config');
 const { THEME_IDS } = require('./schema');
+const ailog = require('./ailog');
 
 const TOTAL_BUDGET_MS = 90000;
 const MAX_REPLY_TOKENS = 6000;
@@ -76,7 +77,8 @@ async function callOnce({ p, model }, messages, signal) {
 
 // Try each model until one returns usable JSON (checked by `accept`).
 // `tokens` adds up every attempt, including failed ones that still used tokens.
-async function callJson(messages, accept = () => true) {
+// Every attempt is recorded for the admin page (ailog.js).
+async function callJson(task, messages, accept = () => true) {
   const started = Date.now();
   const errors = [];
   let tokens = 0;
@@ -86,14 +88,20 @@ async function callJson(messages, accept = () => true) {
     if (left < 5000) break;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), Math.min(a.p.timeoutMs, left));
+    const t0 = Date.now();
+    let spent = 0;
     try {
       const out = await callOnce(a, messages, ctrl.signal);
+      spent = out.tokens;
       tokens += out.tokens;
       if (!accept(out.json)) throw new Error(`${model}: reply was missing required fields`);
+      ailog.record({ task, provider: a.name, model, ok: true, ms: Date.now() - t0, tokens: spent });
       return { json: out.json, model: `${a.name}:${model}`, tokens };
     } catch (e) {
-      tokens += e.tokens || 0;
-      errors.push(e.name === 'AbortError' ? `${model}: timed out` : e.message);
+      if (!spent) { spent = e.tokens || 0; tokens += spent; }
+      const why = e.name === 'AbortError' ? `${model}: timed out` : e.message;
+      errors.push(why);
+      ailog.record({ task, provider: a.name, model, ok: false, ms: Date.now() - t0, tokens: spent, error: why.replace(`${model}: `, '') });
     } finally {
       clearTimeout(timer);
     }
@@ -126,7 +134,7 @@ async function extractResume(text) {
     },
     { role: 'user', content: `Resume text:\n"""\n${String(text).slice(0, 30000)}\n"""` },
   ];
-  const { json, model, tokens } = await callJson(messages, (j) => typeof j.name === 'string' && Array.isArray(j.experience));
+  const { json, model, tokens } = await callJson('upload', messages, (j) => typeof j.name === 'string' && Array.isArray(j.experience));
   console.log(`LLM extraction by ${model} (${tokens} tokens)`);
   return { data: json, tokens };
 }
@@ -173,7 +181,7 @@ ${String(jd).slice(0, 8000)}
     ...history.slice(-10).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: String(m.text || '').slice(0, 2000) })),
     { role: 'user', content: `Current theme: ${theme}\nCurrent resume JSON:\n${JSON.stringify(data)}\n\nRequest: ${message}` },
   ];
-  const { json, model, tokens } = await callJson(messages, (j) => typeof j.reply === 'string' && j.reply.trim());
+  const { json, model, tokens } = await callJson('chat', messages, (j) => typeof j.reply === 'string' && j.reply.trim());
   console.log(`LLM chat by ${model} (${tokens} tokens)`);
   const changed = json.data && typeof json.data === 'object' && !Array.isArray(json.data);
   return {
@@ -209,7 +217,7 @@ Rules:
     },
     { role: 'user', content: `Job description:\n"""\n${String(jd).slice(0, 8000)}\n"""` },
   ];
-  const { json, model, tokens } = await callJson(messages, (j) => Array.isArray(j.keywords) && j.keywords.length > 0);
+  const { json, model, tokens } = await callJson('job keywords', messages, (j) => Array.isArray(j.keywords) && j.keywords.length > 0);
   console.log(`LLM job keywords by ${model} (${tokens} tokens)`);
   return { job: json, tokens };
 }
@@ -238,7 +246,7 @@ Rules:
     },
     { role: 'user', content: JSON.stringify(lines).slice(0, 30000) },
   ];
-  const { json, model, tokens } = await callJson(messages, (j) => Array.isArray(j.issues));
+  const { json, model, tokens } = await callJson('spelling', messages, (j) => Array.isArray(j.issues));
   console.log(`LLM proofread by ${model} (${tokens} tokens)`);
   return { issues: json.issues, tokens };
 }

@@ -96,11 +96,18 @@
     } catch (e) { toast(e.message); }
   }
   $('#home-sample').addEventListener('click', startSample);
-  $('#many-cta').addEventListener('click', () => {
-    if (state.me.signedIn) { location.hash = state.resume ? 'editor' : 'upload'; return; }
+  function startFromHome(openAts) {
+    if (state.me.signedIn) {
+      if (!state.resume) { location.hash = 'upload'; return; }
+      location.hash = 'editor';
+      if (openAts) setTimeout(() => setTab('ats'), 0);
+      return;
+    }
     $('#view-home').scrollTo({ top: 0, behavior: 'smooth' });
     toast('Sign in with Google to get started.');
-  });
+  }
+  $('#many-cta').addEventListener('click', () => startFromHome(false));
+  $('#atsp-cta').addEventListener('click', () => startFromHome(true));
   $('#upload-sample').addEventListener('click', startSample);
 
   /* ---------- upload ---------- */

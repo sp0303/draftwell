@@ -385,3 +385,31 @@ p{margin:0}
 .hl-toggle input{accent-color:var(--accent);width:16px;height:16px;margin:0}
 ::highlight(ats-hit){background-color:rgba(250,204,21,.45);color:inherit}
 @media (max-width:560px){.hl-toggle{display:none}.rail-tab{font-size:15px;padding-inline:8px}}
+
+/* home: ATS score section (visual on the left) */
+.many.flip{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);margin-top:32px}
+.atsp{background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:var(--shadow);display:grid;gap:18px}
+.atsp-head{display:flex;gap:16px;align-items:center}
+.atsp-ring{position:relative;width:104px;height:104px;flex:none}
+.atsp-ring svg{width:104px;height:104px;transform:rotate(-90deg)}
+.atsp-ring circle{fill:none;stroke-width:9}
+.atsp-ring .track{stroke:var(--surface-2)}
+.atsp-ring .val{stroke:var(--accent);stroke-linecap:round;stroke-dasharray:263.89;stroke-dashoffset:47.5}
+.atsp-ring .n{position:absolute;inset:0;display:grid;place-content:center;text-align:center;line-height:1}
+.atsp-ring .n b{font-family:var(--f-grotesk);font-size:34px;font-weight:700}
+.atsp-ring .n small{font-size:11px;color:var(--muted);margin-top:4px}
+.atsp-job{font-size:12.5px;color:var(--muted)}
+.atsp h3{font-size:22px;margin:2px 0 6px}
+.atsp-delta{display:inline-block;font-size:12px;font-weight:600;color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,transparent);padding:3px 9px;border-radius:999px}
+.atsp-parts{display:grid;gap:10px}
+.atsp-parts div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;font-size:13px}
+.atsp-parts span{color:var(--muted)}
+.atsp-parts b{font-family:var(--f-grotesk);font-weight:600;font-variant-numeric:tabular-nums}
+.atsp-parts i{grid-column:1/-1;height:6px;border-radius:999px;background:linear-gradient(var(--accent),var(--accent)) 0 0/var(--w) 100% no-repeat,var(--surface-2)}
+.atsp-parts i.full{background:linear-gradient(var(--ok),var(--ok)) 0 0/var(--w) 100% no-repeat,var(--surface-2)}
+.atsp-chips{display:flex;flex-wrap:wrap;gap:6px}
+.atsp-chips span{font-size:12.5px;padding:3px 10px;border-radius:999px}
+.atsp-chips .hit{color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,transparent)}
+.atsp-chips .miss{color:var(--muted);background:var(--surface-2)}
+@media (max-width:960px){.many.flip{grid-template-columns:1fr}.many.flip .atsp{order:2}}
+@media (max-width:560px){.atsp{padding:14px}.atsp-ring,.atsp-ring svg{width:84px;height:84px}.atsp-ring .n b{font-size:28px}}

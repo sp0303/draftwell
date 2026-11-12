@@ -45,6 +45,7 @@ button,input,textarea,select{font:inherit;color:inherit}
 .account .who .initial{display:grid;place-items:center;font-weight:600;font-size:12px;color:var(--muted)}
 .account .who span{max-width:14em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .account .out{font-size:13px;padding:6px 11px}
+.gbtn{color-scheme:light}
 .account .gbtn{min-height:32px;display:flex;align-items:center}
 .step.done b{background:var(--ok);color:var(--surface)}
 .step:disabled{cursor:not-allowed;opacity:.55}
@@ -189,7 +190,7 @@ p{margin:0}
 #paper [data-p]{border-radius:2px;cursor:text;outline:1px solid transparent;outline-offset:1px;transition:outline-color .12s,background .12s}
 #paper [data-p]:hover{outline-color:rgba(184,86,47,.45)}
 #paper [data-p]:focus{outline:1.5px solid #b8562f;background:rgba(184,86,47,.06)}
-#paper [data-p]:empty{display:inline-block;min-width:40px}
+#paper [data-p]:empty{display:inline-block;min-width:40px;margin-inline-end:8px}
 #paper [data-p]:empty::before{content:"Type here";color:#aaa}
 
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:13.5px;z-index:50;box-shadow:var(--shadow);max-width:calc(100% - 32px)}
@@ -199,13 +200,26 @@ p{margin:0}
   .hero{grid-template-columns:1fr}
   .stack{height:360px}
   .theme-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .editor{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);height:auto;min-height:100%}
-  .chat{border-right:0;border-bottom:1px solid var(--line);height:420px}
+  .editor{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);height:auto;min-height:100%}
+  .chat{border-right:0;border-bottom:1px solid var(--line);height:460px}
+  .msgs{min-height:140px}
+  .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:10px}
+  .chips::-webkit-scrollbar{display:none}
+  .chips .chip{flex:none;white-space:nowrap}
   .paper-area{padding:16px}
   #view-editor{overflow:auto!important}
 }
-@media (max-width:560px){.foot{justify-content:center;text-align:center}
-.account .who span{display:none}
+@media (max-width:560px){
+  .topbar{gap:10px}
+  .brand{font-size:17px}
+  .steps{gap:2px}
+  .step{padding:4px}
+  .account{gap:8px}
+  .account .who span{display:none}
+  .account .out{padding:5px 10px}
+  .foot{justify-content:center;flex-wrap:nowrap;gap:10px;font-size:11.5px;padding-top:7px;padding-bottom:calc(7px + env(safe-area-inset-bottom,0px))}
+  .foot .rights{display:none}
+  .foot .by{font-size:12px;white-space:nowrap}
 
   .how{grid-template-columns:1fr}
   .found{grid-template-columns:repeat(2,minmax(0,1fr))}

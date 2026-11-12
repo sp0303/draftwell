@@ -43,6 +43,12 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
     assert.equal(home.status, 200); assert.equal(home.headers.get('cache-control'), 'no-cache');
     assert.match(html, /src="\/js\/app\.js\?v=[0-9a-f]{10}"/); assert.match(html, /href="\/css\/app\.css\?v=[0-9a-f]{10}"/);
     ok('landing page loads signed out, with versioned script and style links');
+    assert.match(home.headers.get('content-security-policy') || '', /frame-ancestors 'none'/);
+    assert.equal(home.headers.get('x-frame-options'), 'DENY'); assert.equal(home.headers.get('x-content-type-options'), 'nosniff');
+    ok('security headers set (CSP, no framing, nosniff)');
+    const badJson = await fetch(`${base}/api/auth/google`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{bad' });
+    assert.equal(badJson.status, 400); assert.equal((await badJson.json()).error, 'The request body is not valid JSON.');
+    ok('malformed JSON gets a plain 400 message');
     let r = await call('GET', '/api/sample');
     assert.equal(r.status, 200); assert.ok(r.json.name); ok('sample preview data is public');
 
@@ -78,12 +84,13 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
     let up;
     if (file) {
       const fd = new FormData();
-      fd.append('resume', new Blob([fs.readFileSync(file)], { type: 'application/pdf' }), path.basename(file));
+      const type = { '.pdf': 'application/pdf', '.txt': 'text/plain', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }[path.extname(file).toLowerCase()];
+      fd.append('resume', new Blob([fs.readFileSync(file)], { type }), path.basename(file));
       up = await call('POST', '/api/resumes', fd);
       assert.equal(up.status, 201, JSON.stringify(up.json));
       const d = up.json.data;
       console.log(`  ok  upload parsed: name="${d.name}", ${d.experience.length} roles, ${d.skills.length} skill groups, ${d.projects.length} projects, ${d.education.length} schools, ${d.contact.length} contact items`);
-      const stored = fs.readdirSync(process.env.UPLOAD_DIR, { recursive: true }).filter((f) => /\.pdf$/.test(f));
+      const stored = fs.readdirSync(process.env.UPLOAD_DIR, { recursive: true }).filter((f) => /\.(pdf|txt|docx)$/.test(f));
       assert.equal(stored.length, 1); ok(`original saved on disk (${stored[0]})`);
     }
 

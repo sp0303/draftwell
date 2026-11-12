@@ -106,6 +106,8 @@
     $('#drop').hidden = false;
     $('#progress').hidden = true;
     renderRecent();
+    // The list may be out of date (theme or name changed in the editor).
+    refreshList().then(renderRecent).catch(() => {});
   }
   function renderRecent() {
     const box = $('#recent');
@@ -438,6 +440,9 @@
   function signedOut() {
     if (!state.me.signedIn) return;
     state.me = { signedIn: false }; state.resume = null; state.list = [];
+    // Don't leave the last person's resume in the page (shared computers).
+    $('#recent-list').innerHTML = ''; $('#recent').hidden = true;
+    $('#paper').innerHTML = ''; $('#msgs').innerHTML = ''; $('#theme-grid').innerHTML = '';
     renderAccount();
     if (location.hash && location.hash !== '#home') location.hash = 'home'; else route();
   }

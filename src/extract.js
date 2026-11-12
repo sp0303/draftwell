@@ -27,6 +27,8 @@ const HEADINGS = [
 const MONTH = '(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\.?';
 const DATE_RANGE = new RegExp(`((${MONTH}\\s*)?(19|20)\\d{2})\\s*(-|–|—|to)\\s*((${MONTH}\\s*)?(19|20)\\d{2}|present|current|now)`, 'i');
 const YEAR = /(?<!\d)(19|20)\d{2}(?!\d)/;
+const DEGREE = /\b(b\.?\s?(tech|e|sc|a|com|s)|m\.?\s?(tech|e|sc|a|s|com)|bachelor|master|mba|ph\.?\s?d|diploma|associate|degree)\b/i;
+const SCHOOL = /(university|college|institute|school|academy|\biit\b|\bnit\b|\biiit\b|\bbits\b)/i;
 const BULLET = /^[•●▪◦*\-–·]\s*/;
 const EMAIL = /[\w.+-]+@[\w-]+\.[\w.]+/;
 const PHONE = /\+?\d[\d\s().-]{8,}\d/;
@@ -116,14 +118,23 @@ function parseText(text) {
   data.projects = entries(sections.projects || []).map((e) => {
     const head = e.head.join('  ');
     const year = (head.match(YEAR) || [''])[0];
-    const [name, ...tech] = head.replace(year, '').split(/\s*\|\s*|\s{2,}/).filter(Boolean);
+    // "Name | React, Node.js" or "Name - React, Node.js" (a dash with spaces around it)
+    const [name, ...tech] = head.replace(year, '').split(/\s*\|\s*|\s{2,}|\s+[-–—]\s+/).filter(Boolean);
     return { name: (name || '').trim(), tech: tech.join(', '), year, bullets: e.bullets };
   });
 
   data.education = entries(sections.education || []).map((e) => {
     const all = e.head.concat(e.bullets).join('  ');
     const dm = all.match(DATE_RANGE) || all.match(YEAR);
-    const [school, degree, ...rest] = all.replace(dm ? dm[0] : '', '').split(/\s{2,}|\t/).map((s) => s.trim()).filter(Boolean);
+    let [school, degree, ...rest] = all.replace(dm ? dm[0] : '', '').split(/\s{2,}|\t/).map((s) => s.trim()).filter(Boolean);
+    // One line like "B.Tech, Computer Science, IIT Madras": degree first, school last.
+    if (school && !degree && school.includes(',') && DEGREE.test(school)) {
+      const parts = school.split(/\s*,\s*/).filter(Boolean);
+      const schoolAt = parts.findIndex((p) => SCHOOL.test(p) && !DEGREE.test(p));
+      const i = schoolAt >= 0 ? schoolAt : parts.length - 1;
+      degree = parts.slice(0, i).concat(parts.slice(i + 1)).join(', ');
+      school = parts[i];
+    }
     return { school: school || '', degree: degree || '', dates: dm ? dm[0].replace(/\s*(-|–|—|to)\s*/i, ' – ') : '', detail: rest.join(', ') };
   });
 

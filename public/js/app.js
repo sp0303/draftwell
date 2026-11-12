@@ -280,7 +280,7 @@
     const st = $('#llm-status');
     st.textContent = state.llm ? 'AI connected' : 'Basic mode';
     st.classList.toggle('live', state.llm);
-    st.title = state.llm ? '' : 'The language model is not connected yet, so the assistant handles a few direct commands';
+    st.title = state.llm ? 'AI connected' : 'The language model is not connected yet, so the assistant handles a few direct commands';
     renderSeg(); paint(); drawChat(); drawChips(true); drawJd(); drawAiLeft();
     if (state.atsFor !== state.resume.id) { state.ats = null; state.atsFor = state.resume.id; drawAts(); }
     refreshAts();
@@ -450,7 +450,7 @@
 
     if (ai) {
       if (r.jd) add('Tailor to the job');
-      else add('Paste a job description', () => { jdOpen(true); jdInput.focus(); });
+      else add('Add the job you’re applying for', () => { jdOpen(true); jdInput.focus(); });
       if (pageOver) add('Fit my resume on one page');
       const weak = bullets.find((x) => WEAK_START.test(x.b.trim()));
       if (weak) add(`Rewrite "${short(weak.b, 26)}" with a stronger verb`);
@@ -731,7 +731,7 @@
       atsPane.innerHTML = `<div class="ats-body">
         <div class="ats-score">${ring(a.score, 'Format check')}<div class="ats-verdict"><h3>Format check</h3><p>How easily an applicant tracking system can read this resume. Add the job you're applying for to see how well it matches.</p></div></div>
         <ul class="ats-checks">${a.checks.map((c) => `<li class="${c.ok ? '' : 'no'}">${esc(c.text)}</li>`).join('')}</ul>
-        <button class="btn primary" id="ats-add-jd" type="button">Paste a job description</button>
+        <button class="btn primary" id="ats-add-jd" type="button">Add the job you’re applying for</button>
       </div>`;
       $('#ats-add-jd').addEventListener('click', () => { jdOpen(true); jdInput.focus(); });
       return;

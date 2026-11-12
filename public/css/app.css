@@ -413,3 +413,11 @@ p{margin:0}
 .atsp-chips .miss{color:var(--muted);background:var(--surface-2)}
 @media (max-width:960px){.many.flip{grid-template-columns:1fr}.many.flip .atsp{order:2}}
 @media (max-width:560px){.atsp{padding:14px}.atsp-ring,.atsp-ring svg{width:84px;height:84px}.atsp-ring .n b{font-size:28px}}
+/* Long suggestions wrap inside the rail instead of running off its edge (desktop). */
+.chip{max-width:100%;text-align:left;line-height:1.35;overflow-wrap:anywhere}
+@media (max-width:960px){.chips .chip{max-width:none;overflow-wrap:normal}}
+.chat-head .status{white-space:nowrap}
+/* Narrow rail on smaller desktops: keep only the status dot (the text is still read by screen readers, and shows as a tooltip). */
+@media (min-width:961px) and (max-width:1300px){
+  .chat-head .status{font-size:0;gap:0}
+}

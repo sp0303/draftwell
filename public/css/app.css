@@ -482,3 +482,9 @@ p{margin:0}
 .empty{color:var(--muted);font-size:13px}
 @media (max-width:700px){.ai-split{grid-template-columns:1fr}.stats .wide{grid-column:1/-1}}
 .ai-note{font-size:13px;color:var(--muted);margin-top:-6px}
+/* Editing tip shrinks with an ellipsis so the keyword switch and score stay on the row. */
+.subbar .tip{flex:1 1 200px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.subbar .spacer{display:none}
+.subbar .ats-pill{padding:3px 10px 3px 4px;font-size:12.5px}
+.subbar .ats-pill b{font-size:12px}
+.subbar .hl-toggle{font-size:12.5px}

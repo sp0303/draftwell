@@ -260,14 +260,14 @@
         <div class="toolbar">
           <div class="seg" id="theme-seg" role="group" aria-label="Theme"></div>
           <div class="spacer"></div>
-          <label class="hl-toggle" id="hl-wrap" for="hl" hidden><input type="checkbox" id="hl"> Highlight job keywords</label>
-          <button class="ats-pill" id="ats-pill" type="button" hidden aria-label="Open the ATS score"><b id="ats-pill-n">–</b>ATS match</button>
-          <button class="btn" id="copy-job" type="button" title="Make a copy of this resume to tailor to a different job">Copy for another job</button>
+          <button class="btn" id="copy-job" type="button" title="Make a copy of this resume to tailor to a different job">Copy for new job</button>
           <a class="btn primary" id="download" href="#">Download PDF</a>
         </div>
         <div class="subbar">
-          <span>Click any text on the page to edit it. Enter adds a bullet, Backspace on an empty one removes it.</span>
+          <span class="tip" title="Click any text on the page to edit it. Enter adds a bullet, Backspace on an empty one removes it.">Click any text on the page to edit it. Enter adds a bullet, Backspace on an empty one removes it.</span>
           <span class="spacer" style="flex:1"></span>
+          <label class="hl-toggle" id="hl-wrap" for="hl" hidden title="Highlight the job's keywords on the page"><input type="checkbox" id="hl"> Highlight keywords</label>
+          <button class="ats-pill" id="ats-pill" type="button" hidden aria-label="Open the ATS score"><b id="ats-pill-n">–</b>ATS match</button>
           <span class="meta" id="meta"></span>
         </div>
         <div class="paper-area"><div class="sheet-wrap" id="paper"></div></div>

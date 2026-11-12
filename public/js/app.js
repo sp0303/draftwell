@@ -188,7 +188,10 @@
   async function patch(body) {
     const r = state.resume;
     Object.assign(r, body);
-    try { await api('PATCH', `/api/resumes/${r.id}`, body); setMeta('saved'); } catch (e) { setMeta('error'); toast(e.message); }
+    try {
+      await api('PATCH', `/api/resumes/${r.id}`, body); setMeta('saved');
+      if ((body.data || body.theme) && !$('#view-editor').hidden) drawChips();
+    } catch (e) { setMeta('error'); toast(e.message); }
   }
   function renderSwatches(onPick) {
     const box = $('#swatches');
@@ -219,7 +222,11 @@
 
   /* ---------- editor ---------- */
   let pageOver = false;
-  function setPageWarning(over) { pageOver = over; setMeta(); }
+  function setPageWarning(over) {
+    const changed = over !== pageOver;
+    pageOver = over; setMeta();
+    if (changed && state.resume && !$('#view-editor').hidden) drawChips();
+  }
   let metaState = '';
   function setMeta(s) {
     if (s !== undefined) metaState = s;
@@ -266,7 +273,7 @@
     st.textContent = state.llm ? 'AI connected' : 'Basic mode';
     st.classList.toggle('live', state.llm);
     st.title = state.llm ? '' : 'The language model is not connected yet, so the assistant handles a few direct commands';
-    renderSeg(); paint(); drawChat(); drawChips(); drawJd(); drawAiLeft();
+    renderSeg(); paint(); drawChat(); drawChips(true); drawJd(); drawAiLeft();
   }
 
   /* AI credits */
@@ -415,10 +422,64 @@
       : `<div class="msg bot"><div class="who"><i></i>Assistant</div>${esc(m.text)}${m.change ? `<br><span class="change">${esc(m.change)}</span>` : ''}</div>`)).join('');
     const box = $('#msgs'); box.scrollTop = box.scrollHeight;
   }
-  const CHIPS = ['Shorten my summary', 'Add skill Redux', 'Switch to the Timeline theme', 'Change my title to Frontend Engineer', 'Remove the projects section'];
-  function drawChips() {
+  // Suggestions worked out from this resume (no AI call). With the AI off,
+  // only requests the built-in rules can carry out are offered.
+  const WEAK_START = /^(worked|responsible|helped|assisted|involved|participated|handled|tasked|did|was|were|in charge)\b/i;
+  const short = (s, n = 28) => { s = String(s || '').trim(); return s.length > n ? `${s.slice(0, n - 1).trim()}…` : s; };
+  function suggestions() {
+    const r = state.resume;
+    const d = r.data;
+    const ai = state.llm && !(state.ai && state.ai.credits <= 0);
+    const out = [];
+    const add = (text, run) => { if (text && !out.some((x) => x.text === text)) out.push({ text, run }); };
+    const jobs = d.experience || [];
+    const bullets = jobs.flatMap((j) => (j.bullets || []).map((b) => ({ b, j })));
+    const skills = (d.skills || []).flatMap((g) => g.items || []);
+    const sentences = (d.summary || '').split(/(?<=[.!?])\s+/).filter(Boolean).length;
+
+    if (ai) {
+      if (r.jd) add('Tailor to the job');
+      else add('Paste a job description', () => { jdOpen(true); jdInput.focus(); });
+      if (pageOver) add('Fit my resume on one page');
+      const weak = bullets.find((x) => WEAK_START.test(x.b.trim()));
+      if (weak) add(`Rewrite "${short(weak.b, 26)}" with a stronger verb`);
+      const long = jobs.find((j) => (j.bullets || []).some((b) => b.length > 190));
+      if (long) add(`Tighten my bullets at ${short(long.org || long.role)}`);
+      const vague = jobs.find((j) => (j.bullets || []).length && !(j.bullets || []).some((b) => /\d/.test(b)));
+      if (vague) add(`Make my ${short(vague.org || vague.role)} bullets more specific`);
+      if (!d.summary) add('Write a summary from my experience');
+      else if (d.summary.length > 420 || sentences > 3) add('Shorten my summary');
+      else if (d.title) add(`Sharpen my summary for ${short(d.title, 30)} roles`);
+      if (!d.title && jobs[0] && jobs[0].role) add(`Add a headline based on my ${short(jobs[0].role)} role`);
+      if (skills.length > 24) add('Trim my skills to the strongest ones');
+      else if ((d.skills || []).length === 1 && skills.length > 8) add('Group my skills by category');
+      const seen = new Set();
+      if (skills.some((s) => { const k = s.toLowerCase(); if (seen.has(k)) return true; seen.add(k); return false; })) add('Remove duplicate skills');
+      if (jobs[0] && (jobs[0].bullets || []).length) add(`Improve my bullets at ${short(jobs[0].org || jobs[0].role)}`);
+    } else {
+      if (pageOver && r.theme !== 'compact') add('Switch to the Compact theme');
+      if (pageOver && (d.projects || []).length) add('Remove the projects section');
+      if (d.summary && (d.summary.length > 300 || sentences > 2)) add('Shorten my summary');
+      if (!d.title && jobs[0] && jobs[0].role) add(`Change my title to ${jobs[0].role}`);
+      const techy = /engineer|developer|devops|data|software|programmer|sre|ml\b/i.test(`${d.title} ${jobs.map((j) => j.role).join(' ')}`);
+      const pick = techy && r.theme !== 'tech' ? 'Tech' : r.theme !== 'modern' ? 'Modern' : 'Elegant';
+      add(`Switch to the ${pick} theme`);
+    }
+    return out.slice(0, 5);
+  }
+  let chipKey = '';
+  function drawChips(force) {
+    const list = suggestions();
+    const key = list.map((x) => x.text).join('|');
+    if (!force && key === chipKey) return;
+    chipKey = key;
     const c = $('#chips'); c.innerHTML = '';
-    (state.resume.jd ? ['Tailor to the job', ...CHIPS] : CHIPS).forEach((t) => { const b = document.createElement('button'); b.className = 'chip'; b.textContent = t; b.onclick = () => send(t); c.appendChild(b); });
+    list.forEach((s) => {
+      const b = document.createElement('button');
+      b.className = 'chip'; b.type = 'button'; b.textContent = s.text;
+      b.onclick = () => (s.run ? s.run() : send(s.text));
+      c.appendChild(b);
+    });
   }
   let sending = false;
   async function send(text) {
@@ -442,6 +503,7 @@
       if (out.theme !== r.theme) { r.theme = out.theme; renderSeg(); }
       if (out.ai) setAi(out.ai);
       if (typeof out.jd === 'string' && out.jd !== (r.jd || '')) { r.jd = out.jd; drawJd(); drawChips(); }
+      drawChips();
       drawChat(); paint(out.section);
     } catch (e) {
       ty.remove(); toast(e.message);

@@ -190,7 +190,7 @@
     Object.assign(r, body);
     try {
       await api('PATCH', `/api/resumes/${r.id}`, body); setMeta('saved');
-      if ((body.data || body.theme) && !$('#view-editor').hidden) drawChips();
+      if ((body.data || body.theme) && !$('#view-editor').hidden) { drawChips(); if (body.data) scheduleAts(); }
     } catch (e) { setMeta('error'); toast(e.message); }
   }
   function renderSwatches(onPick) {
@@ -225,7 +225,7 @@
   function setPageWarning(over) {
     const changed = over !== pageOver;
     pageOver = over; setMeta();
-    if (changed && state.resume && !$('#view-editor').hidden) drawChips();
+    if (changed && state.resume && !$('#view-editor').hidden) { drawChips(); scheduleAts(); }
   }
   let metaState = '';
   function setMeta(s) {
@@ -263,6 +263,7 @@
     });
     $('#download').href = `/api/resumes/${r.id}/pdf`;
     setMeta();
+    highlightKeywords();
     if (flashSec) {
       const el = paper.querySelector(`[data-sec="${flashSec}"]`);
       if (el) { el.classList.add('flash'); el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
@@ -274,6 +275,8 @@
     st.classList.toggle('live', state.llm);
     st.title = state.llm ? '' : 'The language model is not connected yet, so the assistant handles a few direct commands';
     renderSeg(); paint(); drawChat(); drawChips(true); drawJd(); drawAiLeft();
+    if (state.atsFor !== state.resume.id) { state.ats = null; state.atsFor = state.resume.id; drawAts(); }
+    refreshAts();
   }
 
   /* AI credits */
@@ -315,6 +318,7 @@
     try {
       await api('PATCH', `/api/resumes/${state.resume.id}`, { jd });
       state.resume.jd = jd;
+      refreshAts();
       return true;
     } catch (e) { toast(e.message); return false; }
   }
@@ -510,6 +514,7 @@
       if (typeof out.jd === 'string' && out.jd !== (r.jd || '')) { r.jd = out.jd; drawJd(); drawChips(); }
       drawChips();
       drawChat(); paint(out.section);
+      refreshAts();
     } catch (e) {
       ty.remove(); toast(e.message);
     } finally { sending = false; }
@@ -584,6 +589,7 @@
   function signedOut() {
     if (!state.me.signedIn) return;
     state.me = { signedIn: false }; state.resume = null; state.list = []; state.ai = null; adminData = null;
+    state.ats = null; state.atsFor = null; atsPane.innerHTML = ''; if (window.CSS && CSS.highlights) CSS.highlights.delete('ats-hit');
     $('#admin-rows').innerHTML = '';
     // Don't leave the last person's resume in the page (shared computers).
     $('#recent-list').innerHTML = ''; $('#recent').hidden = true;
@@ -649,6 +655,147 @@
       toast(`${u.email}: ${fmtN(before)} → ${fmtN(row.credits)} credits`);
     } catch (err) { toast(err.message); }
   });
+
+  /* ---------- ATS match score ---------- */
+  // The score comes from the server (plain code, no credits once the job's keywords are read).
+  const atsPane = $('#pane-ats');
+  let atsBusy = false;
+  let atsAgain = false;
+  let atsTimer;
+  let atsBefore = null; // score before a tailor or fix, to show the change
+  function setTab(t) {
+    const ats = t === 'ats';
+    $('#tab-chat').setAttribute('aria-selected', String(!ats)); $('#tab-chat').tabIndex = ats ? -1 : 0;
+    $('#tab-ats').setAttribute('aria-selected', String(ats)); $('#tab-ats').tabIndex = ats ? 0 : -1;
+    $('#pane-chat').hidden = ats; atsPane.hidden = !ats;
+    if (ats) { drawAts(); refreshAts(); }
+  }
+  $('#tab-chat').addEventListener('click', () => setTab('chat'));
+  $('#tab-ats').addEventListener('click', () => setTab('ats'));
+  $('.rail-tabs').addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const next = $('#tab-ats').getAttribute('aria-selected') === 'true' ? 'chat' : 'ats';
+    setTab(next); $(`#tab-${next}`).focus();
+  });
+  $('#ats-pill').addEventListener('click', () => { setTab('ats'); $('.chat').scrollIntoView({ block: 'start', behavior: 'smooth' }); });
+
+  function scheduleAts() { clearTimeout(atsTimer); atsTimer = setTimeout(refreshAts, 900); }
+  async function refreshAts(opts = {}) {
+    const r = state.resume;
+    if (!r || $('#view-editor').hidden) return;
+    if (atsBusy) { atsAgain = true; return; }
+    atsBusy = true;
+    if (!state.ats) drawAts();
+    try {
+      const out = await api('POST', `/api/resumes/${r.id}/ats`, { onePage: !pageOver, upgrade: Boolean(opts.upgrade) });
+      if (state.resume !== r) return;
+      state.ats = out; state.atsFor = r.id;
+      if (out.ai) setAi(out.ai);
+      drawAts(); highlightKeywords();
+    } catch (e) {
+      if (!atsPane.hidden) toast(e.message);
+    } finally {
+      atsBusy = false;
+      if (atsAgain) { atsAgain = false; refreshAts(); }
+    }
+  }
+
+  const RING = 2 * Math.PI * 42;
+  const verdictOf = (n) => (n >= 80 ? 'Strong match' : n >= 60 ? 'Fair match' : 'Weak match');
+  const tick = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>';
+  function ring(n, label) {
+    return `<div class="ats-ring" role="img" aria-label="${esc(label)}: ${n} out of 100">
+      <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="track" cx="50" cy="50" r="42"/><circle class="val" cx="50" cy="50" r="42" style="stroke-dasharray:${RING.toFixed(2)};stroke-dashoffset:${(RING * (1 - n / 100)).toFixed(2)}"/></svg>
+      <div class="n"><b>${n}</b><small>of 100</small></div></div>`;
+  }
+  function drawAts() {
+    const a = state.ats;
+    const r = state.resume;
+    // Badges in the tab and the toolbar.
+    const n = a ? a.score : null;
+    $('#tab-score').hidden = n == null; $('#tab-score').textContent = n == null ? '' : n;
+    $('#ats-pill').hidden = !a || a.mode !== 'match'; $('#ats-pill-n').textContent = n == null ? '–' : n;
+    $('#hl-wrap').hidden = !a || a.mode !== 'match' || !window.CSS || !CSS.highlights;
+    if (atsPane.hidden) return;
+    if (!a) { atsPane.innerHTML = '<div class="ats-loading"><span></span><span></span><span></span> Checking your resume…</div>'; return; }
+
+    if (a.mode === 'format') {
+      atsPane.innerHTML = `<div class="ats-body">
+        <div class="ats-score">${ring(a.score, 'Format check')}<div class="ats-verdict"><h3>Format check</h3><p>How easily an applicant tracking system can read this resume. Add the job you're applying for to see how well it matches.</p></div></div>
+        <ul class="ats-checks">${a.checks.map((c) => `<li class="${c.ok ? '' : 'no'}">${esc(c.text)}</li>`).join('')}</ul>
+        <button class="btn primary" id="ats-add-jd" type="button">Paste a job description</button>
+      </div>`;
+      $('#ats-add-jd').addEventListener('click', () => { jdOpen(true); jdInput.focus(); });
+      return;
+    }
+
+    const delta = atsBefore != null && a.score !== atsBefore ? a.score - atsBefore : null;
+    const missReq = a.misses.filter((m) => m.required);
+    const missOpt = a.misses.filter((m) => !m.required);
+    atsPane.innerHTML = `<div class="ats-body">
+      <div class="ats-score">${ring(a.score, 'ATS match')}
+        <div class="ats-verdict"><h3>${verdictOf(a.score)}</h3>
+          <p>${a.found} of ${a.totalKeywords} job keywords found${a.requiredMissing ? `, ${a.requiredMissing} required ${a.requiredMissing === 1 ? 'one' : 'ones'} missing` : ', every required one included'}.</p>
+          ${delta != null ? `<span class="ats-delta${delta < 0 ? ' down' : ''}">${delta > 0 ? '+' : ''}${delta} after the last fix</span>` : ''}
+        </div></div>
+      <div class="ats-parts">${a.parts.map((p) => `<div class="ats-part"><span>${esc(p.label)}</span><b>${p.score} / ${p.max}</b><div class="bar"><i class="${p.score === p.max ? 'full' : ''}" style="width:${(p.score / p.max) * 100}%"></i></div></div>`).join('')}</div>
+      <div class="ats-kw"><h4><span>In your resume</span><span>${a.hits.length}</span></h4>
+        <div class="ats-chips">${a.hits.map((h) => `<span class="kchip hit${a.stuffed.some((x) => x.term === h.term) ? ' stuffed' : ''}" title="Mentioned ${h.count} time${h.count === 1 ? '' : 's'}">${tick}${esc(h.term)}</span>`).join('') || '<span class="ats-none">None yet</span>'}</div></div>
+      ${a.misses.length ? `<div class="ats-kw"><h4><span>Missing from your resume</span><span>${a.misses.length}</span></h4>
+        <div class="ats-chips">${missReq.map((m) => `<span class="kchip miss">${esc(m.term)} · required</span>`).join('')}${missOpt.map((m) => `<span class="kchip miss opt">${esc(m.term)}</span>`).join('')}</div>
+        <p class="ats-note">Add these only if you have really used them. The assistant won't add them for you.</p></div>` : ''}
+      ${a.fixes.length ? `<div class="ats-fixes">${a.fixes.map((f, i) => `<div class="ats-fix"><span class="dot" aria-hidden="true"></span><div><b>${esc(f.title)}</b><p>${esc(f.detail)}</p></div>${f.message && state.llm ? `<button class="btn" type="button" data-fix="${i}">Fix</button>` : ''}</div>`).join('')}</div>` : ''}
+      ${state.llm ? `<div class="ats-cta"><button class="btn primary" id="ats-tailor" type="button">Tailor to this job</button><span>Uses about 3 to 8 credits</span></div>` : '<p class="ats-note">Fixes need the AI, which is not available right now.</p>'}
+      <p class="ats-foot">${a.keywordsBy === 'ai' ? 'Job keywords read by the AI.' : `Job keywords found with built-in rules.${state.llm && !(state.ai && state.ai.credits <= 0) ? ' <button class="link" id="ats-upgrade" type="button">Read them with the AI (1 or 2 credits)</button>' : ''}`} The score is a guide to how keyword-matching systems read your resume, not a promise from any employer.</p>
+    </div>`;
+    atsPane.querySelectorAll('[data-fix]').forEach((b) => b.addEventListener('click', () => atsSend(a.fixes[Number(b.dataset.fix)].message, b)));
+    const t = $('#ats-tailor'); if (t) t.addEventListener('click', () => atsSend('Tailor my resume to this job description.', t));
+    const u = $('#ats-upgrade'); if (u) u.addEventListener('click', () => { u.disabled = true; refreshAts({ upgrade: true }); });
+  }
+  async function atsSend(message, btn) {
+    if (sending) return;
+    atsBefore = state.ats ? state.ats.score : null;
+    btn.disabled = true; btn.textContent = 'Working…';
+    atsPane.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    await send(message);
+    // send() re-scores when it finishes; the delta shows on the next draw.
+    if (!sending) drawAts();
+  }
+
+  // Mark the job's keywords on the page without touching the editable text (CSS Custom Highlight API).
+  function kwRe(term) {
+    const raw = String(term).trim();
+    if (!raw) return null;
+    const exact = raw.replace(/[^A-Za-z0-9]/g, '').length <= 2;
+    let t = exact ? raw : raw.toLowerCase();
+    const plural = /[a-z]{3,}s$/.test(t) && !/(ss|us|is)$/.test(t);
+    if (plural) t = t.slice(0, -1);
+    const body = t.split(/[\s.\-/]+/).filter(Boolean).map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s.\\-/]*');
+    return new RegExp(`(?<![A-Za-z0-9+#])${body}${plural ? 's?' : ''}(?![A-Za-z0-9+#])`, exact ? 'g' : 'gi');
+  }
+  function highlightKeywords() {
+    if (!window.CSS || !CSS.highlights) return;
+    CSS.highlights.delete('ats-hit');
+    const a = state.ats;
+    if (!$('#hl').checked || !a || a.mode !== 'match' || !a.hits.length) return;
+    const byTerm = new Map((a.keywords || []).map((k) => [k.term, k]));
+    const res = a.hits.flatMap((h) => [h.term, ...((byTerm.get(h.term) || {}).aliases || [])]).map(kwRe).filter(Boolean);
+    const ranges = [];
+    const walk = document.createTreeWalker($('#paper'), NodeFilter.SHOW_TEXT);
+    for (let node = walk.nextNode(); node; node = walk.nextNode()) {
+      const text = node.nodeValue;
+      for (const re of res) {
+        re.lastIndex = 0;
+        for (let m = re.exec(text); m; m = re.exec(text)) {
+          const range = new Range(); range.setStart(node, m.index); range.setEnd(node, m.index + m[0].length); ranges.push(range);
+          if (!m[0].length) re.lastIndex++;
+        }
+      }
+    }
+    if (ranges.length) CSS.highlights.set('ats-hit', new Highlight(...ranges));
+  }
+  $('#hl').addEventListener('change', () => { try { localStorage.setItem('resumely.hl', $('#hl').checked ? '1' : '0'); } catch (e) {} highlightKeywords(); });
+  try { $('#hl').checked = localStorage.getItem('resumely.hl') !== '0'; } catch (e) { $('#hl').checked = true; }
 
   /* toast */
   let tt;

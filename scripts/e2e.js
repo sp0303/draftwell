@@ -30,6 +30,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
   const server = createApp({ verifyGoogleCredential }).listen(0);
   const base = `http://localhost:${server.address().port}`;
   let cookie = '';
+  let sampleId2;
 
   async function call(method, url, body, raw) {
     const headers = cookie ? { cookie } : {};
@@ -202,6 +203,31 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
     assert.match(r.json.messages[0].text, /^Pasted a job description/); assert.match(r.json.messages[1].text, /needs the AI model/);
     r = await call('GET', `/api/resumes/${jdResume}`);
     assert.equal(r.json.jd, posting.trim()); ok('a job posting pasted into the chat becomes the target job');
+    // ---- ATS score ----
+    r = await call('POST', `/api/resumes/${sampleId2 = (await call('POST', '/api/resumes/sample')).json.id}/ats`, {});
+    assert.equal(r.status, 200); assert.equal(r.json.mode, 'format'); assert.ok(r.json.score > 0 && r.json.score <= 100);
+    assert.ok(r.json.checks.every((c) => typeof c.text === 'string')); ok('ATS: without a job description only the format check runs');
+    const creditsBefore = (await call('GET', '/api/me')).json.ai.credits;
+    r = await call('POST', `/api/resumes/${jdResume}/ats`, { onePage: true });
+    assert.equal(r.json.mode, 'match'); assert.equal(r.json.keywordsBy, 'rules');
+    assert.equal(r.json.parts.length, 5); assert.equal(r.json.parts.reduce((a, p) => a + p.score, 0), r.json.score);
+    assert.ok(r.json.hits.some((h) => h.term === 'React')); assert.ok(r.json.misses.some((m) => m.term === 'GraphQL' && !m.required));
+    assert.ok(r.json.hits.some((h) => h.term === 'TypeScript' && h.required));
+    assert.equal((await call('GET', '/api/me')).json.ai.credits, creditsBefore);
+    ok(`ATS: match score ${r.json.score}/100 with hits, misses and fixes; no credits used without the AI`);
+    const cached = await col('resumes').findOne({ _id: require('../src/db').toId(jdResume) });
+    assert.equal(cached.ats.by, 'rules'); assert.ok(cached.ats.keywords.length >= 4);
+    const firstScore = r.json.score;
+    const stuffedData = (await call('GET', `/api/resumes/${jdResume}`)).json.data;
+    stuffedData.summary = 'React developer. ' + 'React '.repeat(10);
+    await call('PATCH', `/api/resumes/${jdResume}`, { data: stuffedData });
+    r = await call('POST', `/api/resumes/${jdResume}/ats`, { onePage: false });
+    assert.ok(r.json.stuffed.some((s) => s.term === 'React')); assert.ok(r.json.fixes.some((f) => f.id === 'stuffing'));
+    assert.ok(r.json.parts.find((p) => p.id === 'format').score < 15); assert.notEqual(r.json.score, firstScore);
+    ok('ATS: keyword stuffing is flagged and earns less, and a resume over one page loses format points');
+    r = await call('POST', `/api/resumes/${sampleId2}/ats`, {});
+    await call('DELETE', `/api/resumes/${sampleId2}`);
+
     r = await call('GET', '/api/resumes');
     assert.equal(r.json.find((x) => x.id === jdResume).job, 'About the role');
     const srcData = (await call('GET', `/api/resumes/${jdResume}`)).json.data;

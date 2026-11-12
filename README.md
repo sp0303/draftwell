@@ -42,6 +42,10 @@ The AI runs through OpenRouter (`src/llm.js`). Set `LLM_API_KEY`, `LLM_MODEL` an
 
 Each resume can hold a target job description (`jd`), saved from the "Target job" box above the chat or by pasting a job posting straight into the chat. When it is set, chat edits aim at that job: relevant work first, the job's keywords where the resume supports them, and a list of requirements the resume doesn't cover. Nothing is invented.
 
+## ATS match score
+
+The editor's **ATS score** tab scores the resume against its target job (`src/ats.js`), out of 100: job keywords 40 (required ones count double; more than 8 mentions of one keyword counts as stuffing), relevant experience 20, job title 15, readable format 15, specific results 10. The job's keywords are read once per job description, by the AI when available (1 or 2 credits) or else from a built-in list, and cached on the resume (`ats`). Scoring is plain code and costs nothing. Without a job description only the format check runs. Each fix is a precise request to the assistant; matched keywords can be highlighted on the page.
+
 ## AI credits and the admin page
 
 Every account has an AI credit balance (`credits` on the user; new accounts get `AI_STARTING_CREDITS`, default 100). Each AI call costs 1 credit per 1,000 tokens used (at least 1). At 0 credits the model is skipped and the built-in rules answer. Users also carry usage counters (`stats`: AI requests, tokens, credits used, uploads, PDF downloads).
@@ -62,6 +66,7 @@ Google accounts listed in `ADMIN_EMAILS` see an **Admin** link (`#admin`): every
 | GET | `/api/resumes/:id` | Full resume |
 | PATCH | `/api/resumes/:id` | Save `data`, `theme`, `accent`, `title`, `jd` (job description) |
 | POST | `/api/resumes/:id/chat` | Send a chat message |
+| POST | `/api/resumes/:id/ats` | ATS score against the target job (`{ onePage }`) |
 | GET | `/api/resumes/:id/pdf` | Download PDF |
 | GET | `/api/resumes/:id/file` | Download the original upload |
 | DELETE | `/api/resumes/:id` | Delete the resume and its file |

@@ -16,6 +16,7 @@ const { renderPdf } = require('./pdf');
 const SAMPLE = require('./sample');
 const auth = require('./auth');
 const credits = require('./credits');
+const ats = require('./ats');
 const admin = require('./admin');
 
 const MAX_JD = 8000;
@@ -313,6 +314,38 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
       $push: { chat: { $each: msgs, $slice: -200 } },
     });
     res.json({ messages: msgs, data, theme, jd: doc.jd || '', section: out.section || null, aiLimited, ai: credits.status(req.user) });
+  }));
+
+  // ATS match score against the target job. Keywords are read once per job
+  // description (AI when available, else built-in rules) and cached on the resume.
+  api.post('/resumes/:id/ats', wrap(async (req, res) => {
+    const doc = await loadOwned(req);
+    const onePage = !(req.body && req.body.onePage === false);
+    const jd = (doc.jd || '').trim();
+    if (!jd) return res.json({ ...ats.score(doc.data, null, { onePage }), ai: credits.status(req.user) });
+
+    const hash = ats.hashJd(jd);
+    let job = doc.ats && doc.ats.jdHash === hash ? doc.ats : null;
+    // Rules-read keywords are upgraded to AI-read ones once the AI is available again.
+    if (!job || (job.by === 'rules' && llm.isConfigured() && credits.hasCredits(req.user) && req.body && req.body.upgrade)) {
+      let read = null;
+      let by = 'rules';
+      if (llm.isConfigured() && credits.hasCredits(req.user)) {
+        try {
+          const out = await llm.jobKeywords(jd);
+          await credits.charge(req.user, out.tokens);
+          read = ats.normalizeJob(out.job, jd);
+          if (read.keywords.length) by = 'ai'; else read = null;
+        } catch (e) {
+          if (e.tokens) await credits.charge(req.user, e.tokens);
+          console.error('LLM job keywords failed, using rules:', e.message);
+        }
+      }
+      if (!read) read = ats.keywordsByRules(jd);
+      job = { jdHash: hash, by, title: read.title, keywords: read.keywords, at: new Date() };
+      await col('resumes').updateOne({ _id: doc._id }, { $set: { ats: job } });
+    }
+    res.json({ ...ats.score(doc.data, job, { onePage }), keywordsBy: job.by, keywords: job.keywords, ai: credits.status(req.user) });
   }));
 
   api.get('/resumes/:id/pdf', wrap(async (req, res) => {

@@ -143,7 +143,13 @@
   <section class="view" id="view-editor" hidden style="overflow:hidden">
     <div class="editor">
       <aside class="chat" aria-label="Resume assistant">
-        <div class="chat-head"><h2>Assistant</h2><span class="status" id="llm-status">Basic mode</span></div>
+        <div class="chat-head">
+          <div class="rail-tabs" role="tablist" aria-label="Assistant and ATS score">
+            <button class="rail-tab" role="tab" id="tab-chat" type="button" aria-selected="true" aria-controls="pane-chat">Assistant</button>
+            <button class="rail-tab" role="tab" id="tab-ats" type="button" aria-selected="false" aria-controls="pane-ats" tabindex="-1">ATS score <span class="tab-score" id="tab-score" hidden></span></button>
+          </div>
+          <span class="status" id="llm-status">Basic mode</span>
+        </div>
         <div class="jd" id="jd">
           <button class="jd-bar" id="jd-toggle" type="button" aria-expanded="false" aria-controls="jd-body">
             <span class="jd-label">Target job</span>
@@ -160,6 +166,7 @@
             </div>
           </div>
         </div>
+        <div class="pane" id="pane-chat" role="tabpanel" aria-labelledby="tab-chat">
         <div class="msgs" id="msgs" aria-live="polite"></div>
         <div class="chips" id="chips"></div>
         <div class="composer">
@@ -169,11 +176,15 @@
           </form>
           <p class="hint"><span>Enter to send, Shift+Enter for a new line</span><span class="ai-left" id="ai-left"></span></p>
         </div>
+        </div>
+        <div class="pane ats" id="pane-ats" role="tabpanel" aria-labelledby="tab-ats" hidden></div>
       </aside>
       <div class="canvas">
         <div class="toolbar">
           <div class="seg" id="theme-seg" role="group" aria-label="Theme"></div>
           <div class="spacer"></div>
+          <label class="hl-toggle" id="hl-wrap" for="hl" hidden><input type="checkbox" id="hl"> Highlight job keywords</label>
+          <button class="ats-pill" id="ats-pill" type="button" hidden aria-label="Open the ATS score"><b id="ats-pill-n">–</b>ATS match</button>
           <button class="btn" id="copy-job" type="button" title="Make a copy of this resume to tailor to a different job">Copy for another job</button>
           <a class="btn primary" id="download" href="#">Download PDF</a>
         </div>

@@ -300,7 +300,7 @@
     $('#jd').classList.toggle('has', Boolean(jd));
     $('#jd-sum').textContent = jd ? jd.split(/\n/).map((s) => s.trim()).find(Boolean) : "Paste the job you're applying for";
     // Ask for it up front on a fresh resume.
-    jdOpen(!jd && !state.resume.chat.length && innerHeight >= 700);
+    jdOpen(!jd && !state.resume.chat.length && innerHeight >= 700 && innerWidth > 960);
     jdCount();
   }
   function jdCount() {
@@ -480,7 +480,12 @@
       b.onclick = () => (s.run ? s.run() : send(s.text));
       c.appendChild(b);
     });
+    chipsEdge();
   }
+  // Fade the right edge only while more chips are hidden off to the side (phones).
+  function chipsEdge() { const c = $('#chips'); c.classList.toggle('at-end', c.scrollLeft + c.clientWidth >= c.scrollWidth - 4); }
+  $('#chips').addEventListener('scroll', chipsEdge, { passive: true });
+  window.addEventListener('resize', chipsEdge);
   let sending = false;
   async function send(text) {
     text = (text || '').trim();

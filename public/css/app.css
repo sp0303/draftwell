@@ -201,9 +201,9 @@ p{margin:0}
   .stack{height:360px}
   .theme-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .editor{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);height:auto;min-height:100%}
-  .chat{border-right:0;border-bottom:1px solid var(--line);height:460px}
-  .msgs{min-height:140px}
-  .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:10px}
+  .chat{border-right:0;border-bottom:1px solid var(--line);height:auto}
+  .msgs{min-height:140px;max-height:300px}
+  .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:10px;padding-top:2px;-webkit-mask-image:linear-gradient(90deg,#000 85%,transparent);mask-image:linear-gradient(90deg,#000 85%,transparent)}
   .chips::-webkit-scrollbar{display:none}
   .chips .chip{flex:none;white-space:nowrap}
   .paper-area{padding:16px}
@@ -283,7 +283,7 @@ p{margin:0}
 .grant input{width:84px;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:inherit;font:inherit;font-size:13px;padding:6px 8px}
 .grant .btn{padding:6px 11px;font-size:13px}
 @media (max-width:560px){.account .credits{display:none}.stats b{font-size:18px}}
-.chat:has(.jd-body:not([hidden])) .chips{display:none}
+@media (min-width:961px){.chat:has(.jd-body:not([hidden])) .chips{display:none}}
 
 /* home: "100 job applications, 100 resumes" */
 .many{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:56px;align-items:center;margin-top:72px;padding:48px;border-radius:20px;background:var(--surface);border:1px solid var(--line)}
@@ -314,3 +314,4 @@ p{margin:0}
 @media (max-width:960px){.many{grid-template-columns:1fr;gap:32px;padding:32px}}
 @media (max-width:560px){.many{margin-top:48px;padding:22px 16px;border-radius:16px}.apps{padding:12px}.apps em{display:none}}
 #view-home{overflow-x:hidden}
+.chips.at-end{-webkit-mask-image:none;mask-image:none}

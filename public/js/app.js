@@ -2,7 +2,7 @@
   'use strict';
   const { THEMES, ACCENTS, render, esc } = window.Templates;
   const $ = (s) => document.querySelector(s);
-  const CURRENT_KEY = 'draftwell.current';
+  const CURRENT_KEY = 'resumely.current';
 
   const state = { sample: null, list: [], resume: null, llm: false };
 

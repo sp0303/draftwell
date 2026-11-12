@@ -23,10 +23,10 @@ const httpError = (status, message) => Object.assign(new Error(message), { statu
 
 /* ---------- users: an anonymous id kept in a cookie ---------- */
 async function ensureUser(req, res, next) {
-  let uid = req.cookies.dw_uid;
+  let uid = req.cookies.rl_uid;
   if (!uid || !/^[a-f0-9]{32}$/.test(uid)) {
     uid = crypto.randomBytes(16).toString('hex');
-    res.cookie('dw_uid', uid, { httpOnly: true, sameSite: 'lax', secure: config.cookieSecure, maxAge: 365 * 24 * 3600 * 1000 });
+    res.cookie('rl_uid', uid, { httpOnly: true, sameSite: 'lax', secure: config.cookieSecure, maxAge: 365 * 24 * 3600 * 1000 });
   }
   const now = new Date();
   req.user = await col('users').findOneAndUpdate(

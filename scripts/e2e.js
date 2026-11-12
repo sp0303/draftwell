@@ -8,7 +8,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 
 (async () => {
   const mongo = await MongoMemoryServer.create();
-  process.env.UPLOAD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'draftwell-e2e-'));
+  process.env.UPLOAD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'resumely-e2e-'));
   const db = require('../src/db');
   const { createApp } = require('../src/app');
   const { closeBrowser } = require('../src/pdf');
@@ -31,7 +31,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 
   try {
     let r = await call('GET', '/api/resumes');
-    assert.equal(r.status, 200); assert.deepEqual(r.json, []); assert.ok(cookie.startsWith('dw_uid='));
+    assert.equal(r.status, 200); assert.deepEqual(r.json, []); assert.ok(cookie.startsWith('rl_uid='));
     ok('new visitor gets a cookie and an empty list');
 
     r = await call('POST', '/api/resumes/sample');

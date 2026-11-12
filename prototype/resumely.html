@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Draftwell Resume Studio</title>
+<title>Resumely Resume Studio</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -263,9 +263,9 @@ p{margin:0}
 
 <div class="app">
   <header class="topbar">
-    <a class="brand" href="#home" aria-label="Draftwell home">
+    <a class="brand" href="#home" aria-label="Resumely home">
       <span class="brand-mark"><svg viewBox="0 0 16 16" fill="none"><path d="M4 2.5h5.5L12 5v8.5H4z" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/><path d="M6 8h4M6 10.5h3" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg></span>
-      Draftwell
+      Resumely
     </a>
     <nav class="steps" id="steps" aria-label="Progress">
       <button class="step" data-go="upload"><b>1</b><span>Upload</span></button>
@@ -281,7 +281,7 @@ p{margin:0}
         <div>
           <p class="eyebrow">Resume builder with an AI editor</p>
           <h1>Bring your old resume. Leave with a better one.</h1>
-          <p class="lede">Upload the resume you already have. Draftwell pulls out your experience, lets you pick a layout, and then you edit it by chatting: "make my summary shorter", "add React to my skills".</p>
+          <p class="lede">Upload the resume you already have. Resumely pulls out your experience, lets you pick a layout, and then you edit it by chatting: "make my summary shorter", "add React to my skills".</p>
           <div class="cta">
             <button class="btn primary" data-go="upload">Upload your resume</button>
             <button class="link" id="home-sample">Try it with a sample resume</button>
@@ -424,7 +424,7 @@ const SAMPLE={
   certifications:["AWS Certified Cloud Practitioner (2024)"]
 };
 
-const KEY="draftwell.v1";
+const KEY="resumely.v1";
 let state={data:null,theme:"classic",accent:ACCENTS[0][1],file:null,sample:false,chat:[]};
 try{const s=JSON.parse(localStorage.getItem(KEY)||"null");if(s&&s.data)state=Object.assign(state,s);}catch(e){}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}

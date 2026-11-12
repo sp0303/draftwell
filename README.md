@@ -1,4 +1,4 @@
-# Draftwell
+# Resumely
 
 Resume builder: upload a resume, pick one of 8 themes, edit it directly on the page or by chatting, and download a PDF that matches the preview.
 
@@ -17,8 +17,8 @@ No MongoDB yet? `node scripts/dev-memory.js` runs the app against a temporary in
 | What | Where |
 |---|---|
 | Uploaded resume files | On disk under `UPLOAD_DIR` (default `storage/uploads/<user id>/`) |
-| Extracted resume data, theme, accent, chat history | MongoDB `draftwell_resumes` collection |
-| Visitors | MongoDB `draftwell_users` collection, identified by an anonymous `dw_uid` cookie |
+| Extracted resume data, theme, accent, chat history | MongoDB `resumely_resumes` collection |
+| Visitors | MongoDB `resumely_users` collection, identified by an anonymous `rl_uid` cookie |
 
 ## How it works
 

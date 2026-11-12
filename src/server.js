@@ -8,7 +8,7 @@ async function main() {
   fs.mkdirSync(config.uploadDir, { recursive: true });
   await db.connect();
   const server = createApp().listen(config.port, () => {
-    console.log(`Draftwell running at http://localhost:${config.port}`);
+    console.log(`Resumely running at http://localhost:${config.port}`);
     console.log(`Uploads stored in ${config.uploadDir}`);
   });
   const stop = async () => {

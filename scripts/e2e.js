@@ -1,0 +1,108 @@
+// End-to-end check of the API against an in-memory MongoDB.
+// Usage: npm run test:e2e [path/to/resume.pdf]
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const assert = require('assert/strict');
+const { MongoMemoryServer } = require('mongodb-memory-server');
+
+(async () => {
+  const mongo = await MongoMemoryServer.create();
+  process.env.UPLOAD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'draftwell-e2e-'));
+  const db = require('../src/db');
+  const { createApp } = require('../src/app');
+  const { closeBrowser } = require('../src/pdf');
+  await db.connect(mongo.getUri());
+  const server = createApp().listen(0);
+  const base = `http://localhost:${server.address().port}`;
+  let cookie = '';
+
+  async function call(method, url, body, raw) {
+    const headers = cookie ? { cookie } : {};
+    let payload;
+    if (body instanceof FormData) payload = body;
+    else if (body !== undefined) { headers['content-type'] = 'application/json'; payload = JSON.stringify(body); }
+    const res = await fetch(base + url, { method, headers, body: payload });
+    const sc = res.headers.get('set-cookie');
+    if (sc) cookie = sc.split(';')[0];
+    return raw ? res : { status: res.status, json: await res.json().catch(() => null) };
+  }
+  const ok = (label) => console.log(`  ok  ${label}`);
+
+  try {
+    let r = await call('GET', '/api/resumes');
+    assert.equal(r.status, 200); assert.deepEqual(r.json, []); assert.ok(cookie.startsWith('dw_uid='));
+    ok('new visitor gets a cookie and an empty list');
+
+    r = await call('POST', '/api/resumes/sample');
+    assert.equal(r.status, 201); const sampleId = r.json.id;
+    ok('sample resume created');
+
+    const file = process.argv[2];
+    let up;
+    if (file) {
+      const fd = new FormData();
+      fd.append('resume', new Blob([fs.readFileSync(file)], { type: 'application/pdf' }), path.basename(file));
+      up = await call('POST', '/api/resumes', fd);
+      assert.equal(up.status, 201, JSON.stringify(up.json));
+      const d = up.json.data;
+      console.log(`  ok  upload parsed: name="${d.name}", ${d.experience.length} roles, ${d.skills.length} skill groups, ${d.projects.length} projects, ${d.education.length} schools, ${d.contact.length} contact items`);
+      const stored = fs.readdirSync(process.env.UPLOAD_DIR, { recursive: true }).filter((f) => /\.pdf$/.test(f));
+      assert.equal(stored.length, 1); ok(`original saved on disk (${stored[0]})`);
+    }
+
+    const bad = new FormData();
+    bad.append('resume', new Blob(['x'], { type: 'image/png' }), 'photo.png');
+    r = await call('POST', '/api/resumes', bad);
+    assert.equal(r.status, 400); ok(`bad file type rejected: "${r.json.error}"`);
+
+    r = await call('PATCH', `/api/resumes/${sampleId}`, { theme: 'timeline', accent: '#2f5d50', data: { name: 'Edited Name', summary: 'New summary.', skills: [{ group: 'Frontend', items: ['React'] }] } });
+    assert.equal(r.status, 200);
+    r = await call('GET', `/api/resumes/${sampleId}`);
+    assert.equal(r.json.data.name, 'Edited Name'); assert.equal(r.json.theme, 'timeline'); assert.equal(r.json.accent, '#2f5d50');
+    ok('direct edits, theme and accent saved to Mongo');
+
+    r = await call('PATCH', `/api/resumes/${sampleId}`, { theme: 'nope' });
+    assert.equal(r.status, 400); ok('unknown theme rejected');
+
+    r = await call('POST', `/api/resumes/${sampleId}/chat`, { message: 'add skill Redux' });
+    assert.equal(r.status, 200); assert.ok(r.json.data.skills[0].items.includes('Redux'));
+    r = await call('GET', `/api/resumes/${sampleId}`);
+    assert.equal(r.json.chat.length, 2); assert.ok(r.json.data.skills[0].items.includes('Redux'));
+    ok('chat command applied and chat history saved');
+
+    const pdf = await call('GET', `/api/resumes/${sampleId}/pdf`, undefined, true);
+    assert.equal(pdf.status, 200); assert.equal(pdf.headers.get('content-type'), 'application/pdf');
+    const buf = Buffer.from(await pdf.arrayBuffer());
+    assert.equal(buf.subarray(0, 4).toString(), '%PDF');
+    const pdfOut = path.join(__dirname, '..', 'storage', 'e2e-sample.pdf');
+    fs.mkdirSync(path.dirname(pdfOut), { recursive: true }); fs.writeFileSync(pdfOut, buf);
+    ok(`PDF rendered (${Math.round(buf.length / 1024)} KB, saved to storage/e2e-sample.pdf)`);
+
+    if (up) {
+      const f = await call('GET', `/api/resumes/${up.json.id}/file`, undefined, true);
+      assert.equal(f.status, 200); ok('original file downloads');
+    }
+
+    const other = cookie; cookie = '';
+    r = await call('GET', `/api/resumes/${sampleId}`);
+    assert.equal(r.status, 404); ok("another visitor can't open someone else's resume");
+    cookie = other;
+
+    r = await call('DELETE', `/api/resumes/${sampleId}`);
+    assert.equal(r.status, 200);
+    r = await call('GET', '/api/resumes');
+    assert.equal(r.json.length, up ? 1 : 0); ok('delete removes the resume');
+
+    console.log('\nAll checks passed.');
+  } catch (e) {
+    console.error('\nFAILED:', e.message);
+    process.exitCode = 1;
+  } finally {
+    server.close();
+    await closeBrowser();
+    await db.close();
+    await mongo.stop();
+    fs.rmSync(process.env.UPLOAD_DIR, { recursive: true, force: true });
+  }
+})();

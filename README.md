@@ -36,7 +36,17 @@ Set `GOOGLE_CLIENT_ID` in `.env` to an OAuth client ID of type *Web application*
 
 ## Connecting the LLM
 
-Fill in `extractResume()` and `chat()` in `src/llm.js` and set `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_MODEL` in `.env`. Every LLM call goes through that file.
+The AI runs through OpenRouter (`src/llm.js`). Set `LLM_API_KEY`, `LLM_MODEL` and optionally `LLM_FALLBACK_MODELS` in `.env`. Every LLM call goes through that file.
+
+## Tailoring to a job
+
+Each resume can hold a target job description (`jd`), saved from the "Target job" box above the chat or by pasting a job posting straight into the chat. When it is set, chat edits aim at that job: relevant work first, the job's keywords where the resume supports them, and a list of requirements the resume doesn't cover. Nothing is invented.
+
+## AI credits and the admin page
+
+Every account has an AI credit balance (`credits` on the user; new accounts get `AI_STARTING_CREDITS`, default 100). Each AI call costs 1 credit per 1,000 tokens used (at least 1). At 0 credits the model is skipped and the built-in rules answer. Users also carry usage counters (`stats`: AI requests, tokens, credits used, uploads, PDF downloads).
+
+Google accounts listed in `ADMIN_EMAILS` see an **Admin** link (`#admin`): every user with their balance and usage, plus Add / Set to for credits. Each change is kept in the user's `creditLog`.
 
 ## API
 
@@ -49,11 +59,13 @@ Fill in `extractResume()` and `chat()` in `src/llm.js` and set `LLM_PROVIDER` / 
 | POST | `/api/resumes` | Upload a file (`resume` form field) |
 | POST | `/api/resumes/sample` | Create a resume from the sample profile |
 | GET | `/api/resumes/:id` | Full resume |
-| PATCH | `/api/resumes/:id` | Save `data`, `theme`, `accent`, `title` |
+| PATCH | `/api/resumes/:id` | Save `data`, `theme`, `accent`, `title`, `jd` (job description) |
 | POST | `/api/resumes/:id/chat` | Send a chat message |
 | GET | `/api/resumes/:id/pdf` | Download PDF |
 | GET | `/api/resumes/:id/file` | Download the original upload |
 | DELETE | `/api/resumes/:id` | Delete the resume and its file |
+| GET | `/api/admin/users` | Admin: users, credits and usage |
+| POST | `/api/admin/users/:id/credits` | Admin: `{ add: n }` or `{ set: n }` |
 
 ## Tests
 

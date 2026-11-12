@@ -10,6 +10,8 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
   const mongo = await MongoMemoryServer.create();
   process.env.UPLOAD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'resumely-e2e-'));
   process.env.LLM_API_KEY = ''; // keep the tests on the built-in rules, never a live model
+  process.env.ADMIN_EMAILS = 'boss@example.com';
+  process.env.AI_STARTING_CREDITS = '100';
   const { parseJson } = require('../src/llm');
   assert.deepEqual(parseJson('```json\n{"a":1}\n```'), { a: 1 });
   assert.deepEqual(parseJson('Sure! Here it is: {"a":{"b":2}} hope that helps'), { a: { b: 2 } });
@@ -175,6 +177,67 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
     cookie = fresh;
     r = await call('GET', '/api/resumes');
     assert.equal(r.status, 200); ok("signing out one browser doesn't sign out the others");
+
+    // ---- credits ----
+    r = await call('GET', '/api/me');
+    assert.equal(r.json.ai.credits, 100); assert.equal(r.json.user.isAdmin, false); ok('new account starts with 100 AI credits');
+    const config = require('../src/config');
+    const credits = require('../src/credits');
+    const { col } = require('../src/db');
+    const anaDoc = await col('users').findOne({ 'google.sub': '111' });
+    assert.equal((await credits.charge(anaDoc, 2500)).credits, 97);
+    await credits.charge(anaDoc, 1);
+    assert.equal((await col('users').findOne({ _id: anaDoc._id })).credits, 96); ok('an AI call costs 1 credit per 1,000 tokens (at least 1)');
+
+    // ---- job description ----
+    r = await call('POST', '/api/resumes/sample'); const jdResume = r.json.id;
+    r = await call('PATCH', `/api/resumes/${jdResume}`, { jd: 'x'.repeat(8001) });
+    assert.equal(r.status, 400);
+    r = await call('PATCH', `/api/resumes/${jdResume}`, { jd: '  Senior React Engineer at Acme  ' });
+    r = await call('GET', `/api/resumes/${jdResume}`);
+    assert.equal(r.json.jd, 'Senior React Engineer at Acme'); ok('job description saved on the resume (and over-long ones refused)');
+    const posting = `About the role\nWe are looking for a Frontend Engineer to build our design system.\nRequirements\n- 4+ years of React and TypeScript\n- Experience with accessibility and testing\nNice to have: GraphQL, Next.js. ${'Details. '.repeat(30)}`;
+    r = await call('POST', `/api/resumes/${jdResume}/chat`, { message: posting });
+    assert.equal(r.status, 200); assert.equal(r.json.jd, posting.trim());
+    assert.match(r.json.messages[0].text, /^Pasted a job description/); assert.match(r.json.messages[1].text, /needs the AI model/);
+    r = await call('GET', `/api/resumes/${jdResume}`);
+    assert.equal(r.json.jd, posting.trim()); ok('a job posting pasted into the chat becomes the target job');
+    r = await call('POST', `/api/resumes/${jdResume}/chat`, { message: 'make it better '.repeat(200) });
+    assert.equal(r.status, 400); ok('over-long chat messages that are not job postings are refused');
+
+    // Out of credits: the model is skipped and the built-in rules answer.
+    const savedLlm = { ...config.llm };
+    Object.assign(config.llm, { provider: 'openrouter', apiKey: 'test-not-used', model: 'test/model' });
+    await col('users').updateOne({ _id: anaDoc._id }, { $set: { credits: 0 } });
+    r = await call('POST', `/api/resumes/${jdResume}/chat`, { message: 'add skill Go' });
+    Object.assign(config.llm, savedLlm);
+    assert.equal(r.json.aiLimited, true); assert.equal(r.json.ai.credits, 0);
+    assert.match(r.json.messages[1].text, /out of AI credits/); assert.ok(r.json.data.skills[0].items.includes('Go'));
+    ok('with no credits left the model is not called and simple commands still work');
+
+    // ---- admin ----
+    r = await call('GET', '/api/admin/users');
+    assert.equal(r.status, 403); ok('non-admins are refused on the admin API (403)');
+    const anaCookie = cookie; cookie = '';
+    r = await signIn('999', 'Boss@Example.com');
+    assert.equal(r.json.user.isAdmin, true);
+    r = await call('GET', '/api/admin/users');
+    assert.equal(r.status, 200);
+    const anaRow = r.json.users.find((u) => u.email === 'ana@example.com');
+    assert.equal(anaRow.credits, 0); assert.equal(anaRow.creditsUsed, 4); assert.equal(anaRow.aiRequests, 2);
+    assert.equal(anaRow.pdfDownloads, 1); assert.equal(anaRow.uploads, up ? 1 : 0); assert.equal(anaRow.resumes, up ? 2 : 1);
+    assert.equal(r.json.totals.users, 3); ok('admin sees every user with credits, AI use, uploads, PDF downloads and resumes');
+    r = await call('POST', `/api/admin/users/${anaRow.id}/credits`, { add: 50 });
+    assert.equal(r.status, 200); assert.equal(r.json.credits, 50);
+    r = await call('POST', `/api/admin/users/${anaRow.id}/credits`, { set: 500 });
+    assert.equal(r.json.credits, 500); assert.equal(r.json.creditLog[0].by.toLowerCase(), 'boss@example.com'); assert.equal(r.json.creditLog[0].before, 50);
+    r = await call('POST', `/api/admin/users/${anaRow.id}/credits`, { add: 1.5 });
+    assert.equal(r.status, 400);
+    r = await call('POST', `/api/admin/users/000000000000000000000000/credits`, { add: 5 });
+    assert.equal(r.status, 404); ok('admin can add credits or set a balance, and each change is logged');
+    cookie = anaCookie;
+    r = await call('GET', '/api/me');
+    assert.equal(r.json.ai.credits, 500); ok('the user sees the new balance');
 
     console.log('\nAll checks passed.');
   } catch (e) {

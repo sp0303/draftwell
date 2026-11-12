@@ -14,6 +14,11 @@ module.exports = {
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   cookieSecure: process.env.COOKIE_SECURE === 'true',
   maxUploadBytes: 10 * 1024 * 1024,
+  // AI credits a new account starts with (1 credit = 1,000 model tokens).
+  startingCredits: Number.isFinite(Number(process.env.AI_STARTING_CREDITS)) && process.env.AI_STARTING_CREDITS !== ''
+    ? Number(process.env.AI_STARTING_CREDITS) : 100,
+  // Google accounts (comma separated emails) that can open the admin page.
+  adminEmails: (process.env.ADMIN_EMAILS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
   llm: {
     provider: process.env.LLM_PROVIDER || '',
     apiKey: process.env.LLM_API_KEY || '',

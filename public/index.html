@@ -120,6 +120,22 @@
     <div class="editor">
       <aside class="chat" aria-label="Resume assistant">
         <div class="chat-head"><h2>Assistant</h2><span class="status" id="llm-status">Basic mode</span></div>
+        <div class="jd" id="jd">
+          <button class="jd-bar" id="jd-toggle" type="button" aria-expanded="false" aria-controls="jd-body">
+            <span class="jd-label">Target job</span>
+            <span class="jd-sum" id="jd-sum">Paste the job you're applying for</span>
+            <svg class="jd-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="jd-body" id="jd-body" hidden>
+            <p class="jd-help">Paste the job description and the assistant will tailor your resume to it: the right keywords, the most relevant work first. It won't add skills you don't have.</p>
+            <textarea id="jd-input" rows="6" maxlength="8000" placeholder="Paste the job description here…" aria-label="Job description"></textarea>
+            <div class="jd-actions">
+              <span class="jd-count" id="jd-count"></span>
+              <button class="link" id="jd-save" type="button">Save</button>
+              <button class="btn primary" id="jd-tailor" type="button">Tailor my resume</button>
+            </div>
+          </div>
+        </div>
         <div class="msgs" id="msgs" aria-live="polite"></div>
         <div class="chips" id="chips"></div>
         <div class="composer">
@@ -127,7 +143,7 @@
             <textarea id="chat-input" rows="1" placeholder="Ask for a change…" aria-label="Message"></textarea>
             <button class="send" id="send" type="submit" aria-label="Send" disabled><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
           </form>
-          <p class="hint">Enter to send, Shift+Enter for a new line</p>
+          <p class="hint"><span>Enter to send, Shift+Enter for a new line</span><span class="ai-left" id="ai-left"></span></p>
         </div>
       </aside>
       <div class="canvas">
@@ -142,6 +158,30 @@
           <span class="meta" id="meta"></span>
         </div>
         <div class="paper-area"><div class="sheet-wrap" id="paper"></div></div>
+      </div>
+    </div>
+  </section>
+  <!-- ADMIN -->
+  <section class="view" id="view-admin" hidden>
+    <div class="wrap">
+      <div class="admin-head">
+        <div>
+          <p class="eyebrow">Admin</p>
+          <h1>Users and credits</h1>
+          <p class="sub" id="admin-sub">1 credit = 1,000 AI tokens.</p>
+        </div>
+        <button class="btn" id="admin-refresh" type="button">Refresh</button>
+      </div>
+      <div class="stats" id="admin-totals"></div>
+      <input class="admin-search" id="admin-search" type="search" placeholder="Search by name or email" aria-label="Search users">
+      <div class="table-wrap">
+        <table class="admin-table">
+          <thead><tr>
+            <th>User</th><th class="num">Credits left</th><th class="num">Credits used</th><th class="num">AI requests</th>
+            <th class="num">Uploads</th><th class="num">PDF downloads</th><th class="num">Resumes</th><th>Last seen</th><th>Change credits</th>
+          </tr></thead>
+          <tbody id="admin-rows"></tbody>
+        </table>
       </div>
     </div>
   </section>

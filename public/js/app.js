@@ -4,7 +4,7 @@
   const $ = (s) => document.querySelector(s);
   const CURRENT_KEY = 'resumely.current';
 
-  const state = { sample: null, list: [], resume: null, llm: false, me: { signedIn: false }, googleClientId: null };
+  const state = { sample: null, list: [], resume: null, llm: false, me: { signedIn: false }, googleClientId: null, ai: null };
 
   /* ---------- API ---------- */
   async function api(method, url, body) {
@@ -48,11 +48,11 @@
   function mount(w, theme, data, accent) { w.innerHTML = render(data, theme, accent); fit(w); ro.observe(w); }
 
   /* ---------- routing ---------- */
-  const VIEWS = ['home', 'upload', 'themes', 'editor'];
+  const VIEWS = ['home', 'upload', 'themes', 'editor', 'admin'];
   function route() {
     let v = (location.hash || '#home').slice(1);
     if (!VIEWS.includes(v)) v = 'home';
-    if (v !== 'home' && !state.me.signedIn) {
+    if ((v !== 'home' && !state.me.signedIn) || (v === 'admin' && !state.me.isAdmin)) {
       v = 'home';
       history.replaceState(null, '', '#home');
     }
@@ -62,14 +62,14 @@
       toast('Upload your resume first so we have your details.');
     }
     VIEWS.forEach((x) => { $(`#view-${x}`).hidden = x !== v; });
-    $('#steps').hidden = v === 'home';
+    $('#steps').hidden = v === 'home' || v === 'admin';
     document.querySelectorAll('.step').forEach((b) => {
       const g = b.dataset.go;
       b.setAttribute('aria-current', g === v ? 'step' : 'false');
       b.classList.toggle('done', VIEWS.indexOf(g) < VIEWS.indexOf(v));
       b.disabled = g !== 'upload' && !state.resume;
     });
-    ({ home: renderHome, upload: renderUpload, themes: renderThemes, editor: renderEditor })[v]();
+    ({ home: renderHome, upload: renderUpload, themes: renderThemes, editor: renderEditor, admin: renderAdmin })[v]();
   }
   window.addEventListener('hashchange', route);
   document.addEventListener('click', (e) => {
@@ -167,7 +167,8 @@
     $('#found').hidden = false;
     $('#extract-note').textContent = r.extractedBy === 'llm'
       ? 'Read with the AI model. Check names and dates in the editor.'
-      : 'Read with built-in rules. Some details may land in the wrong place; you can fix any line in the editor.';
+      : `${r.aiLimited ? 'You are out of AI credits, so this was read' : 'Read'} with built-in rules. Some details may land in the wrong place; you can fix any line in the editor.`;
+    if (r.ai) setAi(r.ai);
     $('#extract-note').hidden = false;
     $('#upload-next').hidden = false;
   }
@@ -260,8 +261,61 @@
     st.textContent = state.llm ? 'AI connected' : 'Basic mode';
     st.classList.toggle('live', state.llm);
     st.title = state.llm ? '' : 'The language model is not connected yet, so the assistant handles a few direct commands';
-    renderSeg(); paint(); drawChat(); drawChips();
+    renderSeg(); paint(); drawChat(); drawChips(); drawJd(); drawAiLeft();
   }
+
+  /* AI credits */
+  const fmtN = (n) => Number(n || 0).toLocaleString('en-US');
+  function setAi(ai) { state.ai = ai; drawAiLeft(); renderAccount(); }
+  function drawAiLeft() {
+    const el = $('#ai-left');
+    const ai = state.ai;
+    if (!state.llm || !ai) { el.textContent = ''; return; }
+    el.textContent = ai.credits > 0 ? `${fmtN(ai.credits)} AI credits left` : 'Out of AI credits';
+    el.classList.toggle('out', ai.credits <= 0);
+    el.title = `1 credit = ${fmtN(ai.tokensPerCredit)} AI tokens. A typical edit uses 3 to 8 credits.`;
+  }
+
+  /* target job: the job description the resume is tailored to */
+  const jdInput = $('#jd-input');
+  function jdOpen(open) {
+    $('#jd-body').hidden = !open;
+    $('#jd-toggle').setAttribute('aria-expanded', String(open));
+  }
+  function drawJd() {
+    const jd = state.resume.jd || '';
+    jdInput.value = jd;
+    $('#jd').classList.toggle('has', Boolean(jd));
+    $('#jd-sum').textContent = jd ? jd.split(/\n/).map((s) => s.trim()).find(Boolean) : "Paste the job you're applying for";
+    // Ask for it up front on a fresh resume.
+    jdOpen(!jd && !state.resume.chat.length && innerHeight >= 700);
+    jdCount();
+  }
+  function jdCount() {
+    const n = jdInput.value.trim().length;
+    $('#jd-count').textContent = n ? `${fmtN(n)} / 8,000 characters` : '';
+    $('#jd-tailor').disabled = !n;
+    $('#jd-save').disabled = jdInput.value.trim() === (state.resume.jd || '');
+  }
+  async function saveJd() {
+    const jd = jdInput.value.trim();
+    if (jd === (state.resume.jd || '')) return true;
+    try {
+      await api('PATCH', `/api/resumes/${state.resume.id}`, { jd });
+      state.resume.jd = jd;
+      return true;
+    } catch (e) { toast(e.message); return false; }
+  }
+  $('#jd-toggle').addEventListener('click', () => jdOpen($('#jd-body').hidden));
+  jdInput.addEventListener('input', jdCount);
+  $('#jd-save').addEventListener('click', async () => {
+    if (await saveJd()) { toast(state.resume.jd ? 'Job description saved' : 'Job description removed'); drawJd(); drawChips(); jdOpen(false); }
+  });
+  $('#jd-tailor').addEventListener('click', async () => {
+    if (!(await saveJd())) return;
+    drawJd(); drawChips(); jdOpen(false);
+    send('Tailor my resume to this job description.');
+  });
 
   /* direct editing on the page: no LLM involved */
   const getP = (o, p) => p.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
@@ -337,7 +391,7 @@
 
   /* chat */
   function drawChat() {
-    const msgs = state.resume.chat.length ? state.resume.chat : [{ role: 'assistant', text: `I've loaded ${state.resume.file ? 'your resume' : 'the sample resume'}. Click any line on the page to edit it yourself, or tell me what to change.` }];
+    const msgs = state.resume.chat.length ? state.resume.chat : [{ role: 'assistant', text: `I've loaded ${state.resume.file ? 'your resume' : 'the sample resume'}. Applying for a particular job? Paste its description here or in the Target job box above, and I'll tailor your resume to it. You can also click any line on the page to edit it yourself, or tell me what to change.` }];
     $('#msgs').innerHTML = msgs.map((m) => (m.role === 'user'
       ? `<div class="msg user">${esc(m.text)}</div>`
       : `<div class="msg bot"><div class="who"><i></i>Assistant</div>${esc(m.text)}${m.change ? `<br><span class="change">${esc(m.change)}</span>` : ''}</div>`)).join('');
@@ -346,7 +400,7 @@
   const CHIPS = ['Shorten my summary', 'Add skill Redux', 'Switch to the Timeline theme', 'Change my title to Frontend Engineer', 'Remove the projects section'];
   function drawChips() {
     const c = $('#chips'); c.innerHTML = '';
-    CHIPS.forEach((t) => { const b = document.createElement('button'); b.className = 'chip'; b.textContent = t; b.onclick = () => send(t); c.appendChild(b); });
+    (state.resume.jd ? ['Tailor to the job', ...CHIPS] : CHIPS).forEach((t) => { const b = document.createElement('button'); b.className = 'chip'; b.textContent = t; b.onclick = () => send(t); c.appendChild(b); });
   }
   let sending = false;
   async function send(text) {
@@ -368,6 +422,8 @@
       r.chat.pop(); r.chat.push(...out.messages);
       r.data = out.data;
       if (out.theme !== r.theme) { r.theme = out.theme; renderSeg(); }
+      if (out.ai) setAi(out.ai);
+      if (typeof out.jd === 'string' && out.jd !== (r.jd || '')) { r.jd = out.jd; drawJd(); drawChips(); }
       drawChat(); paint(out.section);
     } catch (e) {
       ty.remove(); toast(e.message);
@@ -387,7 +443,10 @@
       const face = me.picture
         ? `<img src="${esc(me.picture)}" alt="" referrerpolicy="no-referrer">`
         : `<b class="initial">${esc((me.name || me.email || '?')[0].toUpperCase())}</b>`;
-      box.innerHTML = `<div class="who" title="${esc(me.email)}">${face}<span>${esc(me.name || me.email)}</span></div>
+      const ai = state.llm && state.ai;
+      box.innerHTML = `${me.isAdmin ? '<a class="admin-link" href="#admin">Admin</a>' : ''}
+        ${ai ? `<span class="credits${ai.credits > 0 ? '' : ' empty'}" title="AI credits left. 1 credit = ${fmtN(ai.tokensPerCredit)} AI tokens.">${fmtN(ai.credits)} credits</span>` : ''}
+        <div class="who" title="${esc(me.email)}">${face}<span>${esc(me.name || me.email)}</span></div>
         <button class="btn out" id="sign-out">Sign out</button>`;
       $('#sign-out').addEventListener('click', signOut);
       return;
@@ -417,8 +476,8 @@
   }
   async function onGoogleCredential(resp) {
     try {
-      const { user } = await api('POST', '/api/auth/google', { credential: resp.credential });
-      state.me = user; renderAccount();
+      const { user, ai } = await api('POST', '/api/auth/google', { credential: resp.credential });
+      state.me = user; state.ai = ai || null; renderAccount();
       await refreshList();
       const id = remembered();
       const pick = state.list.find((r) => r.id === id) || state.list[0];
@@ -439,13 +498,72 @@
   // Back to the signed-out home page (after sign-out, or when the session has ended).
   function signedOut() {
     if (!state.me.signedIn) return;
-    state.me = { signedIn: false }; state.resume = null; state.list = [];
+    state.me = { signedIn: false }; state.resume = null; state.list = []; state.ai = null; adminData = null;
+    $('#admin-rows').innerHTML = '';
     // Don't leave the last person's resume in the page (shared computers).
     $('#recent-list').innerHTML = ''; $('#recent').hidden = true;
     $('#paper').innerHTML = ''; $('#msgs').innerHTML = ''; $('#theme-grid').innerHTML = '';
     renderAccount();
     if (location.hash && location.hash !== '#home') location.hash = 'home'; else route();
   }
+
+  /* admin: users, usage and credits */
+  let adminData = null;
+  const when = (d) => {
+    if (!d) return '—';
+    const s = (Date.now() - new Date(d)) / 1000;
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+    if (s < 86400 * 30) return `${Math.floor(s / 86400)} d ago`;
+    return new Date(d).toLocaleDateString();
+  };
+  async function renderAdmin() {
+    try {
+      adminData = await api('GET', '/api/admin/users');
+      drawAdmin();
+    } catch (e) { toast(e.message); }
+  }
+  function drawAdmin() {
+    if (!adminData) return;
+    const t = adminData.totals;
+    $('#admin-sub').textContent = `1 credit = 1,000 AI tokens. New accounts start with ${fmtN(adminData.startingCredits)} credits.`;
+    $('#admin-totals').innerHTML = [[t.users, 'Users'], [t.credits, 'Credits left'], [t.creditsUsed, 'Credits used'], [t.aiRequests, 'AI requests'], [t.uploads, 'Uploads'], [t.pdfDownloads, 'PDF downloads'], [t.resumes, 'Resumes']]
+      .map(([v, l]) => `<div><b>${fmtN(v)}</b><span>${l}</span></div>`).join('');
+    const q = $('#admin-search').value.trim().toLowerCase();
+    const rows = adminData.users.filter((u) => !q || `${u.name} ${u.email}`.toLowerCase().includes(q));
+    $('#admin-rows').innerHTML = rows.length ? rows.map((u) => `<tr data-id="${esc(u.id)}">
+      <td><div class="au">${u.picture ? `<img src="${esc(u.picture)}" alt="" referrerpolicy="no-referrer">` : `<b class="initial">${esc((u.name || u.email || '?')[0].toUpperCase())}</b>`}
+        <div><b>${esc(u.name || '—')}${u.isAdmin ? ' <span class="tag">admin</span>' : ''}</b><span>${esc(u.email)}</span></div></div></td>
+      <td class="num"><b class="${u.credits > 0 ? '' : 'zero'}">${fmtN(u.credits)}</b></td>
+      <td class="num">${fmtN(u.creditsUsed)}</td><td class="num">${fmtN(u.aiRequests)}</td>
+      <td class="num">${fmtN(u.uploads)}</td><td class="num">${fmtN(u.pdfDownloads)}</td><td class="num">${fmtN(u.resumes)}</td>
+      <td title="Joined ${esc(u.createdAt ? new Date(u.createdAt).toLocaleString() : '—')}">${when(u.lastSeenAt)}</td>
+      <td><form class="grant"><input type="number" step="1" min="-1000000" max="1000000" value="100" aria-label="Credits for ${esc(u.email)}">
+        <button class="btn" data-mode="add" type="submit">Add</button><button class="link" data-mode="set" type="submit">Set to</button></form></td>
+    </tr>`).join('') : '<tr><td colspan="9" class="empty">No users match.</td></tr>';
+  }
+  $('#admin-search').addEventListener('input', drawAdmin);
+  $('#admin-refresh').addEventListener('click', renderAdmin);
+  $('#admin-rows').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const id = form.closest('tr').dataset.id;
+    const mode = (e.submitter && e.submitter.dataset.mode) || 'add';
+    const n = Number(form.querySelector('input').value);
+    if (!Number.isInteger(n)) { toast('Enter a whole number of credits.'); return; }
+    const u = adminData.users.find((x) => x.id === id);
+    if (mode === 'set' && !confirm(`Set ${u.email} to ${fmtN(n)} credits? They have ${fmtN(u.credits)} now.`)) return;
+    try {
+      const row = await api('POST', `/api/admin/users/${id}/credits`, mode === 'set' ? { set: n } : { add: n });
+      const before = u.credits;
+      Object.assign(u, row);
+      adminData.totals.credits += row.credits - before;
+      if (id === state.me.id || u.email === state.me.email) setAi({ ...state.ai, credits: row.credits });
+      drawAdmin();
+      toast(`${u.email}: ${fmtN(before)} → ${fmtN(row.credits)} credits`);
+    } catch (err) { toast(err.message); }
+  });
 
   /* toast */
   let tt;
@@ -457,9 +575,9 @@
   (async function boot() {
     try {
       const me = await api('GET', '/api/me');
-      state.me = me.user; state.googleClientId = me.googleClientId; renderAccount();
+      state.me = me.user; state.googleClientId = me.googleClientId; state.ai = me.ai; renderAccount();
       const [sample, health] = await Promise.all([api('GET', '/api/sample'), api('GET', '/api/health')]);
-      state.sample = sample; state.llm = Boolean(health.llm);
+      state.sample = sample; state.llm = Boolean(health.llm); renderAccount();
       if (state.me.signedIn) {
         await refreshList();
         const id = remembered();

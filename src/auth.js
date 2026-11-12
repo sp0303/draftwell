@@ -29,8 +29,10 @@ function requireUser(req, res, next) {
   next();
 }
 
+const isAdmin = (u) => Boolean(u && u.google && u.google.email && config.adminEmails.includes(u.google.email.toLowerCase()));
+
 const publicUser = (u) => (u && u.google
-  ? { signedIn: true, name: u.google.name || '', email: u.google.email || '', picture: u.google.picture || '' }
+  ? { signedIn: true, name: u.google.name || '', email: u.google.email || '', picture: u.google.picture || '', isAdmin: isAdmin(u) }
   : { signedIn: false });
 
 let client;
@@ -53,7 +55,7 @@ async function signIn(req, res, profile) {
   const now = new Date();
   const user = await col('users').findOneAndUpdate(
     { 'google.sub': google.sub },
-    { $set: { google, lastSeenAt: now }, $setOnInsert: { createdAt: now } },
+    { $set: { google, lastSeenAt: now }, $setOnInsert: { createdAt: now, credits: config.startingCredits } },
     { upsert: true, returnDocument: 'after' },
   );
 
@@ -70,4 +72,4 @@ async function signOut(req, res) {
   res.clearCookie(COOKIE, { path: '/' });
 }
 
-module.exports = { loadUser, requireUser, signIn, signOut, publicUser, verifyGoogleCredential };
+module.exports = { loadUser, requireUser, signIn, signOut, publicUser, isAdmin, verifyGoogleCredential };

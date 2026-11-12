@@ -95,12 +95,13 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
       // Google Identity Services needs its script, button iframe and styles.
       'Content-Security-Policy': [
         "default-src 'self'",
-        "script-src 'self' https://accounts.google.com/gsi/client",
+        // Cloudflare injects its Web Analytics beacon into pages it proxies.
+        "script-src 'self' https://accounts.google.com/gsi/client https://static.cloudflareinsights.com",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style",
         "font-src 'self' https://fonts.gstatic.com",
         "img-src 'self' data: https://*.googleusercontent.com",
         "frame-src https://accounts.google.com/gsi/",
-        "connect-src 'self' https://accounts.google.com/gsi/",
+        "connect-src 'self' https://accounts.google.com/gsi/ https://cloudflareinsights.com",
         "frame-ancestors 'none'",
         "base-uri 'self'",
         "form-action 'self'",

@@ -20,6 +20,9 @@ const admin = require('./admin');
 
 const MAX_JD = 8000;
 const MAX_MESSAGE = 2000;
+const MAX_RESUMES = 200;
+// First line of a job description, for lists ("Frontend Engineer, Acme").
+const jobLine = (jd) => String(jd || '').split('\n').map((s) => s.trim()).find(Boolean)?.slice(0, 120) || '';
 const LIMIT_NOTE = 'You are out of AI credits, so I can only handle simple commands (like "add skill X" or "switch to the Modern theme"). Ask the admin for more credits.';
 // A paste that reads like a job posting, or a long multi-line paste.
 const JD_HINT = /\b(responsibilit|requirements?\b|qualifications?\b|about the role|about the job|what you['’]ll do|we['’]re looking for|we are looking for|job description|years of experience|nice to have|must have)/i;
@@ -168,9 +171,26 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
 
   api.get('/resumes', wrap(async (req, res) => {
     const docs = await col('resumes')
-      .find({ userId: req.user._id }, { projection: { title: 1, theme: 1, updatedAt: 1, file: 1, 'data.name': 1 } })
-      .sort({ updatedAt: -1 }).limit(50).toArray();
-    res.json(docs.map((d) => ({ id: String(d._id), title: d.title, name: d.data && d.data.name, theme: d.theme, updatedAt: d.updatedAt, hasFile: Boolean(d.file) })));
+      .find({ userId: req.user._id }, { projection: { title: 1, theme: 1, updatedAt: 1, file: 1, 'data.name': 1, jd: 1 } })
+      .sort({ updatedAt: -1 }).limit(200).toArray();
+    res.json(docs.map((d) => ({
+      id: String(d._id), title: d.title, name: d.data && d.data.name, theme: d.theme, updatedAt: d.updatedAt, hasFile: Boolean(d.file),
+      job: jobLine(d.jd),
+    })));
+  }));
+
+  // A new copy of a resume to tailor to another job. The uploaded file stays with the original.
+  api.post('/resumes/:id/copy', wrap(async (req, res) => {
+    const src = await loadOwned(req);
+    if (await col('resumes').countDocuments({ userId: req.user._id }) >= MAX_RESUMES) {
+      throw httpError(400, `You can keep up to ${MAX_RESUMES} resumes. Delete some old ones first.`);
+    }
+    const base = String(src.title || 'Resume').replace(/^Copy of /, '').slice(0, 100);
+    const doc = await createResume(req.user, {
+      title: `Copy of ${base}`, file: null, rawText: src.rawText || '', extractedBy: src.extractedBy, copiedFrom: src._id,
+      data: src.data, theme: src.theme, accent: src.accent, jd: '',
+    });
+    res.status(201).json(publicResume(doc));
   }));
 
   api.post('/resumes', (req, res, next) => upload.single('resume')(req, res, (err) => {

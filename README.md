@@ -58,6 +58,7 @@ Google accounts listed in `ADMIN_EMAILS` see an **Admin** link (`#admin`): every
 | GET | `/api/resumes` | List this visitor's resumes |
 | POST | `/api/resumes` | Upload a file (`resume` form field) |
 | POST | `/api/resumes/sample` | Create a resume from the sample profile |
+| POST | `/api/resumes/:id/copy` | Copy a resume to tailor to another job |
 | GET | `/api/resumes/:id` | Full resume |
 | PATCH | `/api/resumes/:id` | Save `data`, `theme`, `accent`, `title`, `jd` (job description) |
 | POST | `/api/resumes/:id/chat` | Send a chat message |

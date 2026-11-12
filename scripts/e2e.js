@@ -202,6 +202,17 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
     assert.match(r.json.messages[0].text, /^Pasted a job description/); assert.match(r.json.messages[1].text, /needs the AI model/);
     r = await call('GET', `/api/resumes/${jdResume}`);
     assert.equal(r.json.jd, posting.trim()); ok('a job posting pasted into the chat becomes the target job');
+    r = await call('GET', '/api/resumes');
+    assert.equal(r.json.find((x) => x.id === jdResume).job, 'About the role');
+    const srcData = (await call('GET', `/api/resumes/${jdResume}`)).json.data;
+    r = await call('POST', `/api/resumes/${jdResume}/copy`);
+    assert.equal(r.status, 201); assert.notEqual(r.json.id, jdResume); assert.equal(r.json.jd, ''); assert.equal(r.json.file, null);
+    assert.deepEqual(r.json.data, srcData); assert.equal(r.json.title, 'Copy of Sample resume');
+    const copyId = r.json.id;
+    r = await call('GET', `/api/resumes/${jdResume}`);
+    assert.equal(r.json.jd, posting.trim());
+    r = await call('DELETE', `/api/resumes/${copyId}`); assert.equal(r.status, 200);
+    ok('copy for another job: same content, empty job description, original untouched');
     r = await call('POST', `/api/resumes/${jdResume}/chat`, { message: 'make it better '.repeat(200) });
     assert.equal(r.status, 400); ok('over-long chat messages that are not job postings are refused');
 

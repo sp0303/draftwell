@@ -96,6 +96,11 @@
     } catch (e) { toast(e.message); }
   }
   $('#home-sample').addEventListener('click', startSample);
+  $('#many-cta').addEventListener('click', () => {
+    if (state.me.signedIn) { location.hash = state.resume ? 'editor' : 'upload'; return; }
+    $('#view-home').scrollTo({ top: 0, behavior: 'smooth' });
+    toast('Sign in with Google to get started.');
+  });
   $('#upload-sample').addEventListener('click', startSample);
 
   /* ---------- upload ---------- */
@@ -113,7 +118,7 @@
     const box = $('#recent');
     box.hidden = !state.list.length;
     $('#recent-list').innerHTML = state.list.map((r) => `<li>
-      <div class="rt"><b>${esc(r.name || r.title)}</b><span>${esc(r.title)} · ${esc(cap(r.theme))} · edited ${fmtDate(r.updatedAt)}</span></div>
+      <div class="rt"><b>${esc(r.job ? `For: ${r.job}` : r.name || r.title)}</b><span>${esc(r.job ? r.name || r.title : r.title)} · ${esc(cap(r.theme))} · edited ${fmtDate(r.updatedAt)}</span></div>
       <button class="btn" data-open="${r.id}">Open</button>
       <button class="del" data-del="${r.id}" aria-label="Delete ${esc(r.title)}">Delete</button></li>`).join('');
   }
@@ -384,6 +389,19 @@
     }
   });
 
+  $('#copy-job').addEventListener('click', async () => {
+    const btn = $('#copy-job');
+    btn.disabled = true;
+    try {
+      clearTimeout(saveTimer);
+      if (metaState === 'saving') await patch({ data: state.resume.data });
+      const copy = await api('POST', `/api/resumes/${state.resume.id}/copy`);
+      state.resume = copy; remember(copy.id); await refreshList();
+      renderEditor(); jdOpen(true); jdInput.focus();
+      toast('Copy made. Paste the next job description.');
+    } catch (e) { toast(e.message); } finally { btn.disabled = false; }
+  });
+
   $('#download').addEventListener('click', async (e) => {
     if (metaState === 'saving') { e.preventDefault(); clearTimeout(saveTimer); await patch({ data: state.resume.data }); location.href = $('#download').href; }
     toast('Preparing your PDF…');
@@ -391,7 +409,7 @@
 
   /* chat */
   function drawChat() {
-    const msgs = state.resume.chat.length ? state.resume.chat : [{ role: 'assistant', text: `I've loaded ${state.resume.file ? 'your resume' : 'the sample resume'}. Applying for a particular job? Paste its description here or in the Target job box above, and I'll tailor your resume to it. You can also click any line on the page to edit it yourself, or tell me what to change.` }];
+    const msgs = state.resume.chat.length ? state.resume.chat : [{ role: 'assistant', text: `I've loaded ${state.resume.extractedBy === 'sample' ? 'the sample resume' : 'your resume'}. Applying for a particular job? Paste its description here or in the Target job box above, and I'll tailor your resume to it. You can also click any line on the page to edit it yourself, or tell me what to change.` }];
     $('#msgs').innerHTML = msgs.map((m) => (m.role === 'user'
       ? `<div class="msg user">${esc(m.text)}</div>`
       : `<div class="msg bot"><div class="who"><i></i>Assistant</div>${esc(m.text)}${m.change ? `<br><span class="change">${esc(m.change)}</span>` : ''}</div>`)).join('');

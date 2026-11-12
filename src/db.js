@@ -12,15 +12,15 @@ async function connect(url = config.mongoUrl) {
   await client.connect();
   db = client.db(config.mongoDb);
   await Promise.all([
-    db.collection('users').createIndex({ uid: 1 }, { unique: true }),
-    db.collection('resumes').createIndex({ userId: 1, updatedAt: -1 }),
+    col('users').createIndex({ uid: 1 }, { unique: true }),
+    col('resumes').createIndex({ userId: 1, updatedAt: -1 }),
   ]);
   return db;
 }
 
 function col(name) {
   if (!db) throw new Error('Database not connected');
-  return db.collection(name);
+  return db.collection(config.collectionPrefix + name);
 }
 
 async function close() {

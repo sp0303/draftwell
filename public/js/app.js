@@ -397,6 +397,7 @@
     loadGoogle().then((g) => {
       if (!gInit) { g.accounts.id.initialize({ client_id: state.googleClientId, callback: onGoogleCredential, ux_mode: 'popup', context: 'signin' }); gInit = true; }
       const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+      el.replaceChildren();
       g.accounts.id.renderButton(el, { type: 'standard', theme: dark ? 'filled_black' : 'outline', size, text: 'signin_with', shape: 'pill', width: size === 'large' ? 280 : undefined });
     }).catch(() => toast('Could not load Google sign-in. Check your connection and reload.'));
   }

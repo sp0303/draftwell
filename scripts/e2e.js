@@ -9,6 +9,12 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 (async () => {
   const mongo = await MongoMemoryServer.create();
   process.env.UPLOAD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'resumely-e2e-'));
+  process.env.LLM_API_KEY = ''; // keep the tests on the built-in rules, never a live model
+  const { parseJson } = require('../src/llm');
+  assert.deepEqual(parseJson('```json\n{"a":1}\n```'), { a: 1 });
+  assert.deepEqual(parseJson('Sure! Here it is: {"a":{"b":2}} hope that helps'), { a: { b: 2 } });
+  assert.equal(parseJson('no json here'), null);
+  console.log('  ok  model replies with code fences or extra text are parsed');
   const db = require('../src/db');
   const { createApp } = require('../src/app');
   const { closeBrowser } = require('../src/pdf');

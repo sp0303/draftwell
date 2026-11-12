@@ -18,7 +18,8 @@ No MongoDB yet? `node scripts/dev-memory.js` runs the app against a temporary in
 |---|---|
 | Uploaded resume files | On disk under `UPLOAD_DIR` (default `storage/uploads/<user id>/`) |
 | Extracted resume data, theme, accent, chat history | MongoDB `resumely_resumes` collection |
-| Visitors | MongoDB `resumely_users` collection, identified by an anonymous `rl_uid` cookie |
+| Visitors and accounts | MongoDB `resumely_users` (guests, plus `google` profile once signed in) |
+| Sessions | MongoDB `resumely_sessions`, one per browser, referenced by the `rl_sid` cookie; unused sessions expire after 180 days |
 
 ## How it works
 
@@ -26,6 +27,12 @@ No MongoDB yet? `node scripts/dev-memory.js` runs the app against a temporary in
 - **Direct edits** on the page are saved with `PATCH /api/resumes/:id`. No LLM involved.
 - **Chat** (`POST /api/resumes/:id/chat`) uses `llm.chat()` when connected, else the rules in `src/assistant.js`.
 - **PDF** (`GET /api/resumes/:id/pdf`): Playwright renders the same template and CSS as the preview (`public/js/templates.js`, `public/css/resume.css`) in headless Chromium.
+
+## Google sign-in
+
+Sign-in is optional. Guests can use everything; signing in with Google keeps resumes across browsers. When a guest signs in, the resumes they made as a guest move to their account.
+
+Set `GOOGLE_CLIENT_ID` in `.env` to an OAuth client ID of type *Web application* from Google Cloud Console, with your site's origin (for example `https://resume.sarey.tech`) under *Authorized JavaScript origins*. The browser gets an ID token from Google; `POST /api/auth/google` verifies it with `google-auth-library` (`src/auth.js`). With no client ID set, the button is hidden.
 
 ## Connecting the LLM
 
@@ -35,6 +42,9 @@ Fill in `extractResume()` and `chat()` in `src/llm.js` and set `LLM_PROVIDER` / 
 
 | Method | Path | Purpose |
 |---|---|---|
+| GET | `/api/me` | Signed-in profile (or guest) and the Google client ID |
+| POST | `/api/auth/google` | Sign in with a Google ID token (`credential`) |
+| POST | `/api/auth/logout` | Sign out of this browser |
 | GET | `/api/resumes` | List this visitor's resumes |
 | POST | `/api/resumes` | Upload a file (`resume` form field) |
 | POST | `/api/resumes/sample` | Create a resume from the sample profile |

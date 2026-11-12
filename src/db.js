@@ -11,8 +11,13 @@ async function connect(url = config.mongoUrl) {
   client = new MongoClient(url);
   await client.connect();
   db = client.db(config.mongoDb);
+  // Old anonymous-cookie index from before sessions existed.
+  await col('users').dropIndex('uid_1').catch(() => {});
   await Promise.all([
-    col('users').createIndex({ uid: 1 }, { unique: true }),
+    col('users').createIndex({ 'google.sub': 1 }, { unique: true, partialFilterExpression: { 'google.sub': { $exists: true } } }),
+    col('sessions').createIndex({ sid: 1 }, { unique: true }),
+    // Sessions nobody has used for 180 days are removed automatically.
+    col('sessions').createIndex({ lastSeenAt: 1 }, { expireAfterSeconds: 180 * 24 * 3600 }),
     col('resumes').createIndex({ userId: 1, updatedAt: -1 }),
   ]);
   return db;

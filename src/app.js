@@ -14,6 +14,7 @@ const llm = require('./llm');
 const assistant = require('./assistant');
 const { renderPdf } = require('./pdf');
 const SAMPLE = require('./sample');
+const auth = require('./auth');
 
 const DEFAULT_ACCENT = '#1f3a5f';
 const ALLOWED = { '.pdf': ['application/pdf'], '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'], '.txt': ['text/plain'] };
@@ -21,27 +22,11 @@ const ALLOWED = { '.pdf': ['application/pdf'], '.docx': ['application/vnd.openxm
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 
-/* ---------- users: an anonymous id kept in a cookie ---------- */
-async function ensureUser(req, res, next) {
-  let uid = req.cookies.rl_uid;
-  if (!uid || !/^[a-f0-9]{32}$/.test(uid)) {
-    uid = crypto.randomBytes(16).toString('hex');
-    res.cookie('rl_uid', uid, { httpOnly: true, sameSite: 'lax', secure: config.cookieSecure, maxAge: 365 * 24 * 3600 * 1000 });
-  }
-  const now = new Date();
-  req.user = await col('users').findOneAndUpdate(
-    { uid },
-    { $setOnInsert: { uid, createdAt: now }, $set: { lastSeenAt: now } },
-    { upsert: true, returnDocument: 'after' },
-  );
-  next();
-}
-
 /* ---------- uploads: original files on disk, one folder per user ---------- */
 const upload = multer({
   storage: multer.diskStorage({
     destination(req, file, cb) {
-      const dir = path.join(config.uploadDir, req.user.uid);
+      const dir = path.join(config.uploadDir, String(req.user._id));
       fs.mkdir(dir, { recursive: true }, (err) => cb(err, dir));
     },
     filename(req, file, cb) {
@@ -90,7 +75,7 @@ async function createResume(user, fields) {
 const safeFileName = (s) => (s || 'resume').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') || 'resume';
 
 /* ---------- app ---------- */
-function createApp() {
+function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb' }));
@@ -101,7 +86,22 @@ function createApp() {
   app.get('/api/sample', (req, res) => res.json(normalize(SAMPLE)));
 
   const api = express.Router();
-  api.use(wrap(ensureUser));
+  api.use(wrap(auth.ensureUser));
+
+  api.get('/me', (req, res) => res.json({ user: auth.publicUser(req.user), googleClientId: config.googleClientId || null }));
+
+  api.post('/auth/google', wrap(async (req, res) => {
+    const credential = req.body && typeof req.body.credential === 'string' ? req.body.credential : '';
+    if (!credential) throw httpError(400, 'Missing Google credential');
+    const profile = await verifyGoogleCredential(credential);
+    const user = await auth.signIn(req, res, profile);
+    res.json({ user: auth.publicUser(user) });
+  }));
+
+  api.post('/auth/logout', wrap(async (req, res) => {
+    await auth.signOut(req, res);
+    res.json({ ok: true });
+  }));
 
   api.get('/resumes', wrap(async (req, res) => {
     const docs = await col('resumes')

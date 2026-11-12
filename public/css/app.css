@@ -37,6 +37,15 @@ button,input,textarea,select{font:inherit;color:inherit}
 .step b{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--surface-2);font-size:11px;font-weight:600}
 .step[aria-current="step"]{color:var(--fg);border-color:var(--line);background:var(--surface)}
 .step[aria-current="step"] b{background:var(--accent);color:var(--accent-ink)}
+.account{display:flex;align-items:center;gap:10px;min-height:32px;margin-left:auto}
+.steps:not([hidden]) ~ .account{margin-left:0}
+.account:empty{display:none}
+.account .who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--fg);min-width:0}
+.account .who img,.account .who .initial{width:28px;height:28px;border-radius:50%;flex:none;object-fit:cover;background:var(--surface-2)}
+.account .who .initial{display:grid;place-items:center;font-weight:600;font-size:12px;color:var(--muted)}
+.account .who span{max-width:14em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.account .out{font-size:13px;padding:6px 11px}
+.account .gbtn{min-height:32px;display:flex;align-items:center}
 .step.done b{background:var(--ok);color:var(--surface)}
 .step:disabled{cursor:not-allowed;opacity:.55}
 
@@ -190,7 +199,8 @@ p{margin:0}
   .paper-area{padding:16px}
   #view-editor{overflow:auto!important}
 }
-@media (max-width:560px){
+@media (max-width:560px){.account .who span{display:none}
+
   .how{grid-template-columns:1fr}
   .found{grid-template-columns:repeat(2,minmax(0,1fr))}
   .stack{height:260px}

@@ -10,6 +10,7 @@ module.exports = {
   // Prepended to every collection name so Resumely can share a database with other projects.
   collectionPrefix: process.env.MONGO_COLLECTION_PREFIX ?? 'resumely_',
   uploadDir: path.resolve(root, process.env.UPLOAD_DIR || './storage/uploads'),
+  googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   cookieSecure: process.env.COOKIE_SECURE === 'true',
   maxUploadBytes: 10 * 1024 * 1024,
   llm: {

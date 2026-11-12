@@ -4,7 +4,7 @@
   const $ = (s) => document.querySelector(s);
   const CURRENT_KEY = 'resumely.current';
 
-  const state = { sample: null, list: [], resume: null, llm: false };
+  const state = { sample: null, list: [], resume: null, llm: false, me: { signedIn: false }, googleClientId: null };
 
   /* ---------- API ---------- */
   async function api(method, url, body) {
@@ -367,6 +367,57 @@
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input.value); } });
   $('#chat-form').addEventListener('submit', (e) => { e.preventDefault(); send(input.value); });
 
+  /* account: optional Google sign-in */
+  function renderAccount() {
+    const box = $('#account');
+    const me = state.me;
+    if (me.signedIn) {
+      const face = me.picture
+        ? `<img src="${esc(me.picture)}" alt="" referrerpolicy="no-referrer">`
+        : `<b class="initial">${esc((me.name || me.email || '?')[0].toUpperCase())}</b>`;
+      box.innerHTML = `<div class="who" title="${esc(me.email)}">${face}<span>${esc(me.name || me.email)}</span></div>
+        <button class="btn out" id="sign-out">Sign out</button>`;
+      $('#sign-out').addEventListener('click', signOut);
+      return;
+    }
+    if (!state.googleClientId) { box.innerHTML = ''; return; }
+    box.innerHTML = '<div class="gbtn" id="gbtn"></div>';
+    loadGoogle().then((g) => {
+      g.accounts.id.initialize({ client_id: state.googleClientId, callback: onGoogleCredential, ux_mode: 'popup', context: 'signin' });
+      const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+      g.accounts.id.renderButton($('#gbtn'), { type: 'standard', theme: dark ? 'filled_black' : 'outline', size: 'medium', text: 'signin_with', shape: 'pill' });
+    }).catch(() => { box.innerHTML = ''; });
+  }
+  let gLoad;
+  function loadGoogle() {
+    if (window.google && window.google.accounts) return Promise.resolve(window.google);
+    gLoad = gLoad || new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
+      s.onload = () => resolve(window.google); s.onerror = reject;
+      document.head.appendChild(s);
+    });
+    return gLoad;
+  }
+  async function onGoogleCredential(resp) {
+    try {
+      const { user } = await api('POST', '/api/auth/google', { credential: resp.credential });
+      state.me = user; renderAccount();
+      await refreshList(); renderRecent();
+      toast(`Signed in as ${user.name || user.email}. Your resumes are saved to your account.`);
+    } catch (e) { toast(e.message); }
+  }
+  async function signOut() {
+    try {
+      await api('POST', '/api/auth/logout');
+      if (window.google && window.google.accounts) window.google.accounts.id.disableAutoSelect();
+      state.me = { signedIn: false }; state.resume = null; remember(null);
+      await refreshList(); renderAccount(); renderRecent();
+      location.hash = 'home';
+      toast('Signed out');
+    } catch (e) { toast(e.message); }
+  }
+
   /* toast */
   let tt;
   function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(tt); tt = setTimeout(() => { el.hidden = true; }, 3200); }
@@ -374,6 +425,8 @@
   /* boot */
   (async function boot() {
     try {
+      const me = await api('GET', '/api/me');
+      state.me = me.user; state.googleClientId = me.googleClientId; renderAccount();
       const [sample, health] = await Promise.all([api('GET', '/api/sample'), api('GET', '/api/health'), refreshList()]);
       state.sample = sample; state.llm = Boolean(health.llm);
       const id = remembered();

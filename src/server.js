@@ -7,8 +7,9 @@ const { closeBrowser } = require('./pdf');
 async function main() {
   fs.mkdirSync(config.uploadDir, { recursive: true });
   await db.connect();
-  const server = createApp().listen(config.port, () => {
-    console.log(`Resumely running at http://localhost:${config.port}`);
+  // HOST=127.0.0.1 in production, so only nginx on the same machine can reach the app.
+  const server = createApp().listen(config.port, config.host, () => {
+    console.log(`Resumely running at http://${config.host || 'localhost'}:${config.port}`);
     console.log(`Uploads stored in ${config.uploadDir}`);
   });
   const stop = async () => {

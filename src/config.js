@@ -5,6 +5,7 @@ const root = path.join(__dirname, '..');
 
 module.exports = {
   port: Number(process.env.PORT) || 3000,
+  host: process.env.HOST || undefined, // undefined = every interface (local development)
   mongoUrl: process.env.MONGO_URL || '',
   mongoDb: process.env.MONGO_DB || 'resumely',
   // Prepended to every collection name so Resumely can share a database with other projects.

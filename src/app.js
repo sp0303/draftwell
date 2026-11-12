@@ -17,6 +17,19 @@ const SAMPLE = require('./sample');
 const auth = require('./auth');
 const credits = require('./credits');
 const ats = require('./ats');
+const proofread = require('./proofread');
+const { limit } = require('./limit');
+
+const MIN = 60 * 1000;
+const LIMITS = {
+  signIn: limit('signin', 20, 10 * MIN, 'Too many sign-in attempts.'),
+  upload: limit('upload', 15, 10 * MIN, 'Too many uploads.'),
+  create: limit('create', 30, 10 * MIN, 'Too many new resumes at once.'),
+  chat: limit('chat', 20, MIN, 'Too many messages in a minute.'),
+  ats: limit('ats', 60, MIN, 'Too many score checks in a minute.'),
+  proofread: limit('proofread', 10, 10 * MIN, 'Too many spelling checks.'),
+  pdf: limit('pdf', 20, 5 * MIN, 'Too many PDF downloads.'),
+};
 const admin = require('./admin');
 
 const MAX_JD = 8000;
@@ -32,7 +45,8 @@ const DEFAULT_ACCENT = '#1f3a5f';
 const ALLOWED = { '.pdf': ['application/pdf'], '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'], '.txt': ['text/plain'] };
 
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
-const httpError = (status, message) => Object.assign(new Error(message), { status });
+// Errors made here carry a message written for the person (expose), even for 5xx.
+const httpError = (status, message) => Object.assign(new Error(message), { status, expose: true });
 
 /* ---------- uploads: original files on disk, one folder per user ---------- */
 const upload = multer({
@@ -97,7 +111,14 @@ function buildIndexHtml() {
   });
 }
 
-const safeFileName = (s) => (s || 'resume').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') || 'resume';
+const NOT_FOUND_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page not found · Resumely</title><meta name="robots" content="noindex"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>:root{--bg:#f7f6f2;--fg:#1d1c1a;--muted:#6b6862;--accent:#b8562f}@media (prefers-color-scheme:dark){:root{--bg:#1f1e1c;--fg:#f2f0ea;--muted:#a9a59c;--accent:#e07a52}}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;padding:24px;box-sizing:border-box}
+h1{font-family:Georgia,serif;font-weight:600;font-size:34px;margin:0 0 8px}p{color:var(--muted);margin:0 0 20px}a{color:var(--accent);font-weight:600}</style></head>
+<body><main><h1>This page doesn't exist</h1><p>The link may be old or mistyped.</p><a href="/">Go to Resumely</a></main></body></html>`;
+
+const safeFileName =(s) => (s || 'resume').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') || 'resume';
 
 /* ---------- app ---------- */
 function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}) {
@@ -137,7 +158,19 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
     res.set('Cache-Control', 'no-cache');
     res.type('html').send(indexHtml);
   });
-  app.use(express.static(PUBLIC_DIR));
+  // Versioned CSS/JS (?v=<hash>, see buildIndexHtml) never change: cache them for a year.
+  // Everything else: a day for images and icons, an hour for the rest.
+  app.use((req, res, next) => {
+    if (req.query.v && /^\/(css|js)\//.test(req.path)) res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    else if (/\.(png|svg|ico|webmanifest)$/.test(req.path)) res.set('Cache-Control', 'public, max-age=86400');
+    else if (!req.path.startsWith('/api/')) res.set('Cache-Control', 'public, max-age=3600');
+    next();
+  });
+  app.get('/favicon.ico', (req, res) => res.type('png').sendFile(path.join(PUBLIC_DIR, 'favicon-32.png')));
+  app.use(express.static(PUBLIC_DIR, {
+    cacheControl: false,
+    setHeaders(res, file) { if (file.endsWith('.webmanifest')) res.type('application/manifest+json'); },
+  }));
 
   app.get('/api/health', (req, res) => res.json({ ok: true, llm: llm.isConfigured() }));
   app.get('/api/sample', (req, res) => res.json(normalize(SAMPLE)));
@@ -151,7 +184,7 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
     ai: req.user ? credits.status(req.user) : null,
   }));
 
-  api.post('/auth/google', wrap(async (req, res) => {
+  api.post('/auth/google', LIMITS.signIn, wrap(async (req, res) => {
     const credential = req.body && typeof req.body.credential === 'string' ? req.body.credential : '';
     if (!credential) throw httpError(400, 'Missing Google credential');
     const profile = await verifyGoogleCredential(credential);
@@ -181,7 +214,7 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
   }));
 
   // A new copy of a resume to tailor to another job. The uploaded file stays with the original.
-  api.post('/resumes/:id/copy', wrap(async (req, res) => {
+  api.post('/resumes/:id/copy', LIMITS.create, wrap(async (req, res) => {
     const src = await loadOwned(req);
     if (await col('resumes').countDocuments({ userId: req.user._id }) >= MAX_RESUMES) {
       throw httpError(400, `You can keep up to ${MAX_RESUMES} resumes. Delete some old ones first.`);
@@ -194,7 +227,7 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
     res.status(201).json(publicResume(doc));
   }));
 
-  api.post('/resumes', (req, res, next) => upload.single('resume')(req, res, (err) => {
+  api.post('/resumes', LIMITS.upload, (req, res, next) => upload.single('resume')(req, res, (err) => {
     if (err && err.code === 'LIMIT_FILE_SIZE') return next(httpError(400, 'That file is over 10 MB. Upload a smaller copy.'));
     next(err);
   }), wrap(async (req, res) => {
@@ -237,7 +270,7 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
     res.status(201).json({ ...publicResume(doc), aiLimited, ai: credits.status(req.user) });
   }));
 
-  api.post('/resumes/sample', wrap(async (req, res) => {
+  api.post('/resumes/sample', LIMITS.create, wrap(async (req, res) => {
     const doc = await createResume(req.user, { title: 'Sample resume', file: null, rawText: '', extractedBy: 'sample', data: normalize(SAMPLE) });
     res.status(201).json(publicResume(doc));
   }));
@@ -268,7 +301,7 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
     res.json({ ok: true });
   }));
 
-  api.post('/resumes/:id/chat', wrap(async (req, res) => {
+  api.post('/resumes/:id/chat', LIMITS.chat, wrap(async (req, res) => {
     const doc = await loadOwned(req);
     const raw = typeof req.body.message === 'string' ? req.body.message.trim() : '';
     if (!raw) throw httpError(400, 'Type a message first.');
@@ -318,7 +351,7 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
 
   // ATS match score against the target job. Keywords are read once per job
   // description (AI when available, else built-in rules) and cached on the resume.
-  api.post('/resumes/:id/ats', wrap(async (req, res) => {
+  api.post('/resumes/:id/ats', LIMITS.ats, wrap(async (req, res) => {
     const doc = await loadOwned(req);
     const onePage = !(req.body && req.body.onePage === false);
     const jd = (doc.jd || '').trim();
@@ -348,7 +381,26 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
     res.json({ ...ats.score(doc.data, job, { onePage }), keywordsBy: job.by, keywords: job.keywords, ai: credits.status(req.user) });
   }));
 
-  api.get('/resumes/:id/pdf', wrap(async (req, res) => {
+  // Spelling and grammar check (AI). Returns fixes to pick from; nothing is changed here.
+  api.post('/resumes/:id/proofread', LIMITS.proofread, wrap(async (req, res) => {
+    const doc = await loadOwned(req);
+    if (!llm.isConfigured()) throw httpError(503, 'The spelling and grammar check needs the AI, which is not available right now.');
+    if (!credits.hasCredits(req.user)) throw httpError(402, 'You are out of AI credits. Ask the admin for more to check spelling and grammar.');
+    const lines = proofread.fields(doc.data);
+    if (!lines.length) return res.json({ issues: [], checked: 0, ai: credits.status(req.user) });
+    let out;
+    try {
+      out = await llm.proofread(lines);
+      await credits.charge(req.user, out.tokens);
+    } catch (e) {
+      if (e.tokens) await credits.charge(req.user, e.tokens);
+      console.error('LLM proofread failed:', e.message);
+      throw httpError(503, 'The spelling and grammar check could not run right now. Try again in a minute.');
+    }
+    res.json({ issues: proofread.validate(doc.data, out.issues), checked: lines.length, ai: credits.status(req.user) });
+  }));
+
+  api.get('/resumes/:id/pdf', LIMITS.pdf, wrap(async (req, res) => {
     const doc = await loadOwned(req);
     const pdf = await renderPdf(doc.data, doc.theme, doc.accent);
     await credits.count(req.user, 'pdfDownloads');
@@ -370,14 +422,17 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
 
   app.use('/api', api);
   app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
+  app.use((req, res) => {
+    res.status(404).set('Cache-Control', 'no-cache').type('html').send(NOT_FOUND_HTML);
+  });
 
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
     if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'The request body is not valid JSON.' });
     if (err.type === 'entity.too.large') return res.status(413).json({ error: 'That request is too large.' });
     const status = err.status || 500;
-    if (status >= 500) console.error(err);
-    res.status(status).json({ error: status >= 500 ? 'Something went wrong on our side. Try again.' : err.message });
+    if (status >= 500 && !err.expose) console.error(err);
+    res.status(status).json({ error: status >= 500 && !err.expose ? 'Something went wrong on our side. Try again.' : err.message });
   });
 
   return app;

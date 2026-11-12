@@ -1,0 +1,13 @@
+{
+  "name": "Resumely",
+  "short_name": "Resumely",
+  "description": "Tailor your resume to every job with AI, with an ATS match score.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f6f2",
+  "theme_color": "#b8562f",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

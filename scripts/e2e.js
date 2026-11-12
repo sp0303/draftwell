@@ -58,6 +58,18 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
     const badJson = await fetch(`${base}/api/auth/google`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{bad' });
     assert.equal(badJson.status, 400); assert.equal((await badJson.json()).error, 'The request body is not valid JSON.');
     ok('malformed JSON gets a plain 400 message');
+    // ---- SEO and static files ----
+    assert.match(html, /<meta name="description" content="[^"]{80,}/); assert.match(html, /<link rel="canonical" href="https:\/\/resume\.sarey\.tech\/">/);
+    assert.match(html, /property="og:image" content="https:\/\/resume\.sarey\.tech\/og\.png"/); assert.match(html, /application\/ld\+json/);
+    let s = await fetch(`${base}/robots.txt`); assert.equal(s.status, 200); assert.match(await s.text(), /Sitemap: https:\/\/resume\.sarey\.tech\/sitemap\.xml/);
+    s = await fetch(`${base}/sitemap.xml`); assert.equal(s.status, 200); assert.match(s.headers.get('content-type'), /xml/);
+    s = await fetch(`${base}/favicon.ico`); assert.equal(s.status, 200); assert.match(s.headers.get('content-type'), /image\/png/);
+    s = await fetch(`${base}/og.png`); assert.equal(s.status, 200);
+    s = await fetch(`${base}/site.webmanifest`); assert.match(s.headers.get('content-type'), /manifest\+json/);
+    s = await fetch(`${base}/css/app.css?v=abc`); assert.match(s.headers.get('cache-control'), /immutable/);
+    s = await fetch(`${base}/no-such-page`); assert.equal(s.status, 404); assert.match(await s.text(), /This page doesn't exist/);
+    ok('SEO: description, canonical, social card, structured data, robots, sitemap, favicon, manifest, 404 page');
+
     let r = await call('GET', '/api/sample');
     assert.equal(r.status, 200); assert.ok(r.json.name); ok('sample preview data is public');
 
@@ -227,6 +239,30 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
     ok('ATS: keyword stuffing is flagged and earns less, and a resume over one page loses format points');
     r = await call('POST', `/api/resumes/${sampleId2}/ats`, {});
     await call('DELETE', `/api/resumes/${sampleId2}`);
+
+    // ---- spelling and grammar ----
+    const proof = require('../src/proofread');
+    const pd = (await call('GET', `/api/resumes/${jdResume}`)).json.data;
+    pd.experience[0].bullets[0] = 'Built React dashbords for internal tools';
+    const good = proof.validate(pd, [
+      { path: 'experience.0.bullets.0', original: 'dashbords', fixed: 'dashboards', kind: 'spelling', why: 'Misspelled' },
+      { path: 'experience.0.bullets.0', original: 'dashbords', fixed: 'dashboards' },
+      { path: 'experience.0.bullets.0', original: 'not in the line', fixed: 'x' },
+      { path: 'summary', original: 'React', fixed: 'React' },
+      { path: '__proto__.polluted', original: 'a', fixed: 'b' },
+      { path: 'experience.9.bullets.0', original: 'a', fixed: 'b' },
+      { path: 'summary', original: 'React', fixed: 'x'.repeat(300) },
+    ]);
+    assert.equal(good.length, 1); assert.equal(good[0].fixed, 'dashboards'); assert.equal(good[0].kind, 'spelling');
+    assert.ok(proof.fields(pd).some((f) => f.path === 'experience.0.bullets.0'));
+    ok('proofread: only fixes that quote real text on a real line are kept (no duplicates, rewrites or odd paths)');
+    r = await call('POST', `/api/resumes/${jdResume}/proofread`);
+    assert.equal(r.status, 503); assert.match(r.json.error, /needs the AI/);
+    for (let i = 0; i < 9; i++) await call('POST', `/api/resumes/${jdResume}/proofread`);
+    const limited = await call('POST', `/api/resumes/${jdResume}/proofread`, undefined, true);
+    assert.equal(limited.status, 429); assert.ok(Number(limited.headers.get('retry-after')) > 0);
+    assert.match((await limited.json()).error, /Too many spelling checks/);
+    ok('proofread needs the AI, and costly routes are rate limited (429 with Retry-After)');
 
     r = await call('GET', '/api/resumes');
     assert.equal(r.json.find((x) => x.id === jdResume).job, 'About the role');

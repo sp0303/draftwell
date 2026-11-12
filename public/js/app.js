@@ -451,6 +451,9 @@
     if (ai) {
       if (r.jd) add('Tailor to the job');
       else add('Add the job you’re applying for', () => { jdOpen(true); jdInput.focus(); });
+      const pr = state.proof && state.proof.for === r.id ? state.proof : null;
+      if (!pr || pr.status === 'idle') add('Check spelling and grammar', () => { setTab('ats'); $('.chat').scrollIntoView({ block: 'start', behavior: 'smooth' }); runProof(); });
+      else if (pr.status === 'done' && pr.issues.length) add(`Fix ${pr.issues.length} spelling and grammar ${pr.issues.length === 1 ? 'mistake' : 'mistakes'}`, () => setTab('ats'));
       if (pageOver) add('Fit my resume on one page');
       const weak = bullets.find((x) => WEAK_START.test(x.b.trim()));
       if (weak) add(`Rewrite "${short(weak.b, 26)}" with a stronger verb`);
@@ -596,7 +599,7 @@
   function signedOut() {
     if (!state.me.signedIn) return;
     state.me = { signedIn: false }; state.resume = null; state.list = []; state.ai = null; adminData = null;
-    state.ats = null; state.atsFor = null; atsPane.innerHTML = ''; if (window.CSS && CSS.highlights) CSS.highlights.delete('ats-hit');
+    state.ats = null; state.atsFor = null; state.proof = null; atsPane.innerHTML = ''; if (window.CSS && CSS.highlights) CSS.highlights.delete('ats-hit');
     $('#admin-rows').innerHTML = '';
     // Don't leave the last person's resume in the page (shared computers).
     $('#recent-list').innerHTML = ''; $('#recent').hidden = true;
@@ -716,6 +719,103 @@
       <div class="n"><b>${n}</b><small>of 100</small></div></div>`;
   }
   function drawAts() {
+    drawAtsInner();
+    const body = !atsPane.hidden && state.ats && atsPane.querySelector('.ats-body');
+    if (body) { body.insertAdjacentHTML('beforeend', '<section class="proof" id="proof" aria-labelledby="proof-h"></section>'); drawProof(); }
+  }
+
+  /* spelling and grammar (AI): a list of small fixes the person applies one by one or all at once */
+  const PROOF_KIND = { spelling: 'Spelling', grammar: 'Grammar', punctuation: 'Punctuation', consistency: 'Consistency' };
+  function proofState() {
+    const r = state.resume;
+    if (!state.proof || state.proof.for !== r.id) state.proof = { for: r.id, status: 'idle', issues: [] };
+    return state.proof;
+  }
+  function whereOf(path) {
+    const d = state.resume.data;
+    const k = path.split('.');
+    const n = (i) => Number(i) + 1;
+    if (k[0] === 'title') return 'Headline';
+    if (k[0] === 'summary') return 'Summary';
+    if (k[0] === 'experience') { const e = d.experience[k[1]] || {}; const who = e.org || e.role || `Role ${n(k[1])}`; return k[2] === 'bullets' ? `${who}, bullet ${n(k[3])}` : who; }
+    if (k[0] === 'projects') { const p = d.projects[k[1]] || {}; return k[2] === 'bullets' ? `${p.name || 'Project'}, bullet ${n(k[3])}` : (p.name || 'Project'); }
+    if (k[0] === 'education') return (d.education[k[1]] || {}).school || 'Education';
+    if (k[0] === 'skills') return 'Skills';
+    if (k[0] === 'certifications') return 'Certifications';
+    return path;
+  }
+  // Drop fixes whose text has since changed on the page.
+  function liveIssues(p) {
+    p.issues = p.issues.filter((it) => { const v = getP(state.resume.data, it.path); return typeof v === 'string' && v.includes(it.original); });
+    return p.issues;
+  }
+  function drawProof() {
+    const box = $('#proof');
+    if (!box) return;
+    const p = proofState();
+    const can = state.llm && !(state.ai && state.ai.credits <= 0);
+    const head = '<h4 id="proof-h">Spelling and grammar</h4>';
+    if (p.status === 'running') { box.innerHTML = `${head}<div class="ats-loading"><span></span><span></span><span></span> Reading every line…</div>`; return; }
+    if (p.status === 'idle' || p.status === 'error') {
+      box.innerHTML = `${head}
+        <p class="proof-p">${p.status === 'error' ? esc(p.error) : 'The AI reads every line and lists typos, grammar slips and inconsistencies for you to fix. Names and tech terms are left alone.'}</p>
+        ${can ? '<div class="ats-cta"><button class="btn" id="proof-run" type="button">Check spelling and grammar</button><span>About 3 to 5 credits</span></div>'
+          : `<p class="ats-note">${state.llm ? 'You are out of AI credits.' : 'This needs the AI, which is not available right now.'} Your browser still underlines misspelled words while you edit.</p>`}`;
+      const b = $('#proof-run'); if (b) b.addEventListener('click', runProof);
+      return;
+    }
+    const issues = liveIssues(p);
+    if (!issues.length) {
+      box.innerHTML = `${head}<p class="proof-ok">${p.fixedCount ? `All fixed. ${p.fixedCount} ${p.fixedCount === 1 ? 'change' : 'changes'} saved.` : `No mistakes found in ${p.checked} lines.`}</p>
+        ${can ? '<button class="link" id="proof-run" type="button">Check again</button>' : ''}`;
+      const b = $('#proof-run'); if (b) b.addEventListener('click', runProof);
+      return;
+    }
+    box.innerHTML = `${head}
+      <div class="proof-top"><span>${issues.length} ${issues.length === 1 ? 'mistake' : 'mistakes'} found</span><button class="btn primary" id="proof-all" type="button">Fix all</button></div>
+      <ul class="proof-list">${issues.map((it) => `<li data-id="${esc(it.id)}">
+        <div class="proof-meta"><span class="kind ${esc(it.kind)}">${PROOF_KIND[it.kind] || 'Grammar'}</span><span>${esc(whereOf(it.path))}</span></div>
+        <p class="proof-change"><del>${esc(it.original)}</del> <span aria-hidden="true">→</span><span class="sr-only">change to</span> <ins>${esc(it.fixed) || '<i>remove</i>'}</ins></p>
+        ${it.why ? `<p class="proof-why">${esc(it.why)}</p>` : ''}
+        <div class="proof-act"><button class="btn" type="button" data-fix="${esc(it.id)}">Fix</button><button class="link" type="button" data-ignore="${esc(it.id)}">Ignore</button></div>
+      </li>`).join('')}</ul>`;
+    $('#proof-all').addEventListener('click', () => applyFixes(issues.slice()));
+    box.querySelectorAll('[data-fix]').forEach((b) => b.addEventListener('click', () => applyFixes(issues.filter((x) => x.id === b.dataset.fix))));
+    box.querySelectorAll('[data-ignore]').forEach((b) => b.addEventListener('click', () => { p.issues = p.issues.filter((x) => x.id !== b.dataset.ignore); drawProof(); }));
+  }
+  function applyFixes(list) {
+    const p = proofState();
+    let n = 0;
+    for (const it of list) {
+      const v = getP(state.resume.data, it.path);
+      if (typeof v !== 'string' || !v.includes(it.original)) continue;
+      setP(state.resume.data, it.path, v.replace(it.original, it.fixed).replace(/\s{2,}/g, ' ').trim());
+      n++;
+    }
+    const ids = new Set(list.map((x) => x.id));
+    p.issues = p.issues.filter((x) => !ids.has(x.id));
+    p.fixedCount = (p.fixedCount || 0) + n;
+    if (n) { paint(); queueSave(); toast(n === 1 ? 'Fixed' : `Fixed ${n} mistakes`); }
+    drawProof();
+  }
+  async function runProof() {
+    const r = state.resume;
+    const p = proofState();
+    clearTimeout(saveTimer);
+    if (metaState === 'saving') await patch({ data: r.data });
+    p.status = 'running'; p.fixedCount = 0; drawProof();
+    try {
+      const out = await api('POST', `/api/resumes/${r.id}/proofread`);
+      if (state.resume !== r) return;
+      Object.assign(p, { status: 'done', issues: out.issues, checked: out.checked });
+      if (out.ai) setAi(out.ai);
+    } catch (e) {
+      Object.assign(p, { status: 'error', error: e.message });
+    }
+    drawProof(); drawChips();
+  }
+
+  function drawAtsInner() {
     const a = state.ats;
     const r = state.resume;
     // Badges in the tab and the toolbar.

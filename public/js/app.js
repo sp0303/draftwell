@@ -719,7 +719,8 @@
     const a = state.ats;
     const r = state.resume;
     // Badges in the tab and the toolbar.
-    const n = a ? a.score : null;
+    // Only a match against a job gets a badge; the format check alone would read as a "100% match".
+    const n = a && a.mode === 'match' ? a.score : null;
     $('#tab-score').hidden = n == null; $('#tab-score').textContent = n == null ? '' : n;
     $('#ats-pill').hidden = !a || a.mode !== 'match'; $('#ats-pill-n').textContent = n == null ? '–' : n;
     $('#hl-wrap').hidden = !a || a.mode !== 'match' || !window.CSS || !CSS.highlights;

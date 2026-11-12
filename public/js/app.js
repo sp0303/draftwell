@@ -13,6 +13,7 @@
     else if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
     const res = await fetch(url, opt);
     const json = await res.json().catch(() => ({}));
+    if (res.status === 401 && !url.startsWith('/api/auth/')) signedOut();
     if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`);
     return json;
   }
@@ -51,6 +52,10 @@
   function route() {
     let v = (location.hash || '#home').slice(1);
     if (!VIEWS.includes(v)) v = 'home';
+    if (v !== 'home' && !state.me.signedIn) {
+      v = 'home';
+      history.replaceState(null, '', '#home');
+    }
     if ((v === 'themes' || v === 'editor') && !state.resume) {
       v = 'upload';
       history.replaceState(null, '', '#upload');
@@ -74,6 +79,11 @@
 
   /* ---------- home ---------- */
   function renderHome() {
+    const inside = state.me.signedIn;
+    $('#home-cta').hidden = !inside;
+    $('#home-gate').hidden = inside;
+    if (!state.googleClientId) $('#home-gate .gate-note').textContent = 'Sign-in is not set up on this server yet (GOOGLE_CLIENT_ID is empty).';
+    if (!inside) renderGoogleButton($('#gbtn-home'), 'large');
     const data = (state.resume && state.resume.data) || state.sample;
     if (!data) return;
     document.querySelectorAll('#view-home [data-render]').forEach((w) => mount(w, w.dataset.render, data, (state.resume && state.resume.accent) || ACCENTS[0][1]));
@@ -380,14 +390,17 @@
       $('#sign-out').addEventListener('click', signOut);
       return;
     }
-    if (!state.googleClientId) { box.innerHTML = ''; return; }
-    box.innerHTML = '<div class="gbtn" id="gbtn"></div>';
-    loadGoogle().then((g) => {
-      g.accounts.id.initialize({ client_id: state.googleClientId, callback: onGoogleCredential, ux_mode: 'popup', context: 'signin' });
-      const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-      g.accounts.id.renderButton($('#gbtn'), { type: 'standard', theme: dark ? 'filled_black' : 'outline', size: 'medium', text: 'signin_with', shape: 'pill' });
-    }).catch(() => { box.innerHTML = ''; });
+    box.innerHTML = '';
   }
+  function renderGoogleButton(el, size) {
+    if (!el || !state.googleClientId) return;
+    loadGoogle().then((g) => {
+      if (!gInit) { g.accounts.id.initialize({ client_id: state.googleClientId, callback: onGoogleCredential, ux_mode: 'popup', context: 'signin' }); gInit = true; }
+      const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+      g.accounts.id.renderButton(el, { type: 'standard', theme: dark ? 'filled_black' : 'outline', size, text: 'signin_with', shape: 'pill', width: size === 'large' ? 280 : undefined });
+    }).catch(() => toast('Could not load Google sign-in. Check your connection and reload.'));
+  }
+  let gInit = false;
   let gLoad;
   function loadGoogle() {
     if (window.google && window.google.accounts) return Promise.resolve(window.google);
@@ -403,19 +416,29 @@
     try {
       const { user } = await api('POST', '/api/auth/google', { credential: resp.credential });
       state.me = user; renderAccount();
-      await refreshList(); renderRecent();
-      toast(`Signed in as ${user.name || user.email}. Your resumes are saved to your account.`);
+      await refreshList();
+      const id = remembered();
+      const pick = state.list.find((r) => r.id === id) || state.list[0];
+      if (pick) await openResume(pick.id).catch(() => remember(null));
+      toast(`Signed in as ${user.name || user.email}`);
+      if (location.hash === '#upload') route(); else location.hash = 'upload';
     } catch (e) { toast(e.message); }
   }
   async function signOut() {
     try {
       await api('POST', '/api/auth/logout');
       if (window.google && window.google.accounts) window.google.accounts.id.disableAutoSelect();
-      state.me = { signedIn: false }; state.resume = null; remember(null);
-      await refreshList(); renderAccount(); renderRecent();
-      location.hash = 'home';
+      remember(null); signedOut();
       toast('Signed out');
     } catch (e) { toast(e.message); }
+  }
+
+  // Back to the signed-out home page (after sign-out, or when the session has ended).
+  function signedOut() {
+    if (!state.me.signedIn) return;
+    state.me = { signedIn: false }; state.resume = null; state.list = [];
+    renderAccount();
+    if (location.hash && location.hash !== '#home') location.hash = 'home'; else route();
   }
 
   /* toast */
@@ -427,11 +450,14 @@
     try {
       const me = await api('GET', '/api/me');
       state.me = me.user; state.googleClientId = me.googleClientId; renderAccount();
-      const [sample, health] = await Promise.all([api('GET', '/api/sample'), api('GET', '/api/health'), refreshList()]);
+      const [sample, health] = await Promise.all([api('GET', '/api/sample'), api('GET', '/api/health')]);
       state.sample = sample; state.llm = Boolean(health.llm);
-      const id = remembered();
-      const pick = state.list.find((r) => r.id === id) || state.list[0];
-      if (pick) await openResume(pick.id).catch(() => remember(null));
+      if (state.me.signedIn) {
+        await refreshList();
+        const id = remembered();
+        const pick = state.list.find((r) => r.id === id) || state.list[0];
+        if (pick) await openResume(pick.id).catch(() => remember(null));
+      }
     } catch (e) { toast(`Could not reach the server: ${e.message}`); }
     route();
   })();

@@ -50,6 +50,7 @@ button,input,textarea,select{font:inherit;color:inherit}
 .step:disabled{cursor:not-allowed;opacity:.55}
 
 .view{flex:1;min-height:0;overflow:auto}
+.foot{flex:none;text-align:center;font-size:12px;color:var(--muted);padding:8px 16px calc(8px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:var(--bg)}
 .wrap{max-width:1160px;margin:0 auto;padding-block:40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 
 .btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface);padding:9px 15px;border-radius:var(--r);cursor:pointer;font-weight:500;text-decoration:none;color:var(--fg);font-size:14px}
@@ -66,6 +67,9 @@ p{margin:0}
 .hero{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:48px;align-items:center}
 .hero h1{font-size:clamp(34px,5vw,54px);line-height:1.06;margin-top:8px}
 .hero p.lede{font-size:18px;color:var(--muted);max-width:34em;margin-top:18px}
+.hero .gate{margin-top:28px}
+.hero .gate .gbtn{min-height:44px}
+.gate-note{margin-top:10px;font-size:13px;color:var(--muted)}
 .hero .cta{display:flex;gap:12px;margin-top:28px;flex-wrap:wrap;align-items:center}
 .stack{position:relative;height:440px}
 .stack .sheet-wrap{position:absolute;width:58%;box-shadow:var(--shadow);border-radius:4px;overflow:hidden;height:auto;aspect-ratio:210/297}

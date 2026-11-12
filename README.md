@@ -18,7 +18,7 @@ No MongoDB yet? `node scripts/dev-memory.js` runs the app against a temporary in
 |---|---|
 | Uploaded resume files | On disk under `UPLOAD_DIR` (default `storage/uploads/<user id>/`) |
 | Extracted resume data, theme, accent, chat history | MongoDB `resumely_resumes` collection |
-| Visitors and accounts | MongoDB `resumely_users` (guests, plus `google` profile once signed in) |
+| Accounts | MongoDB `resumely_users`, one per Google account (`google.sub`, email, name, picture) |
 | Sessions | MongoDB `resumely_sessions`, one per browser, referenced by the `rl_sid` cookie; unused sessions expire after 180 days |
 
 ## How it works
@@ -30,9 +30,9 @@ No MongoDB yet? `node scripts/dev-memory.js` runs the app against a temporary in
 
 ## Google sign-in
 
-Sign-in is optional. Guests can use everything; signing in with Google keeps resumes across browsers. When a guest signs in, the resumes they made as a guest move to their account.
+Sign-in with Google is required. Signed-out visitors only see the home page, and every `/api/resumes` route returns 401 without a session.
 
-Set `GOOGLE_CLIENT_ID` in `.env` to an OAuth client ID of type *Web application* from Google Cloud Console, with your site's origin (for example `https://resume.sarey.tech`) under *Authorized JavaScript origins*. The browser gets an ID token from Google; `POST /api/auth/google` verifies it with `google-auth-library` (`src/auth.js`). With no client ID set, the button is hidden.
+Set `GOOGLE_CLIENT_ID` in `.env` to an OAuth client ID of type *Web application* from Google Cloud Console, with your site's origin (for example `https://resume.sarey.tech`) under *Authorized JavaScript origins*. The browser gets an ID token from Google; `POST /api/auth/google` verifies it with `google-auth-library` (`src/auth.js`). With no client ID set, nobody can sign in, and the home page says so.
 
 ## Connecting the LLM
 

@@ -86,7 +86,7 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
   app.get('/api/sample', (req, res) => res.json(normalize(SAMPLE)));
 
   const api = express.Router();
-  api.use(wrap(auth.ensureUser));
+  api.use(wrap(auth.loadUser));
 
   api.get('/me', (req, res) => res.json({ user: auth.publicUser(req.user), googleClientId: config.googleClientId || null }));
 
@@ -102,6 +102,9 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
     await auth.signOut(req, res);
     res.json({ ok: true });
   }));
+
+  // Everything below needs a signed-in user.
+  api.use(auth.requireUser);
 
   api.get('/resumes', wrap(async (req, res) => {
     const docs = await col('resumes')

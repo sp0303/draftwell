@@ -33,9 +33,13 @@
           <p class="eyebrow">Resume builder with an AI editor</p>
           <h1>Bring your old resume. Leave with a better one.</h1>
           <p class="lede">Upload the resume you already have. Resumely pulls out your experience, lets you pick a layout, and then you edit it on the page or by chatting: "make my summary shorter", "add React to my skills".</p>
-          <div class="cta">
+          <div class="cta" id="home-cta" hidden>
             <button class="btn primary" data-go="upload">Upload your resume</button>
             <button class="link" id="home-sample">Try it with a sample resume</button>
+          </div>
+          <div class="gate" id="home-gate" hidden>
+            <div class="gbtn" id="gbtn-home"></div>
+            <p class="gate-note">Sign in with your Google account to upload a resume and save your work.</p>
           </div>
         </div>
         <div class="stack" aria-hidden="true">
@@ -141,6 +145,7 @@
       </div>
     </div>
   </section>
+  <footer class="foot">A Sharat Patnayakuni's product</footer>
 </div>
 <div class="toast" id="toast" role="status" hidden></div>
 

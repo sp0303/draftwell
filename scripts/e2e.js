@@ -30,15 +30,36 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
     else if (body !== undefined) { headers['content-type'] = 'application/json'; payload = JSON.stringify(body); }
     const res = await fetch(base + url, { method, headers, body: payload });
     const sc = res.headers.get('set-cookie');
-    if (sc) cookie = sc.split(';')[0];
+    if (sc) { const c = sc.split(';')[0]; cookie = c.endsWith('=') ? '' : c; }
     return raw ? res : { status: res.status, json: await res.json().catch(() => null) };
   }
+  const signIn = (sub, email) => call('POST', '/api/auth/google', { credential: `good:${sub}:${email}` });
   const ok = (label) => console.log(`  ok  ${label}`);
 
   try {
-    let r = await call('GET', '/api/resumes');
-    assert.equal(r.status, 200); assert.deepEqual(r.json, []); assert.ok(cookie.startsWith('rl_sid='));
-    ok('new visitor gets a cookie and an empty list');
+    // ---- signed out: nothing works ----
+    let r = await call('GET', '/api/me');
+    assert.equal(r.json.user.signedIn, false); assert.equal(cookie, '');
+    for (const [m, u] of [['GET', '/api/resumes'], ['POST', '/api/resumes/sample'], ['GET', '/api/resumes/000000000000000000000000'], ['GET', '/api/resumes/000000000000000000000000/pdf']]) {
+      r = await call(m, u);
+      assert.equal(r.status, 401, `${m} ${u}`);
+    }
+    ok('signed-out visitor is refused on every resume route (401)');
+    const fd0 = new FormData();
+    fd0.append('resume', new Blob(['x'], { type: 'text/plain' }), 'a.txt');
+    r = await call('POST', '/api/resumes', fd0);
+    assert.equal(r.status, 401);
+    assert.equal(fs.readdirSync(process.env.UPLOAD_DIR).length, 0); ok('signed-out upload is refused and nothing is written to disk');
+
+    r = await call('POST', '/api/auth/google', { credential: 'bad' });
+    assert.equal(r.status, 401); assert.equal(cookie, ''); ok('bad Google credential rejected');
+
+    // ---- signed in ----
+    r = await signIn('111', 'ana@example.com');
+    assert.equal(r.status, 200); assert.equal(r.json.user.signedIn, true); assert.equal(r.json.user.email, 'ana@example.com');
+    assert.ok(cookie.startsWith('rl_sid='));
+    r = await call('GET', '/api/resumes');
+    assert.equal(r.status, 200); assert.deepEqual(r.json, []); ok('Google sign-in starts a session; new account has no resumes');
 
     r = await call('POST', '/api/resumes/sample');
     assert.equal(r.status, 201); const sampleId = r.json.id;
@@ -90,64 +111,48 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
       assert.equal(f.status, 200); ok('original file downloads');
     }
 
-    const other = cookie; cookie = '';
+    // ---- other people and other browsers ----
+    const ana = cookie;
+    cookie = '';
+    await signIn('222', 'ben@example.com');
+    r = await call('GET', '/api/resumes');
+    assert.deepEqual(r.json, []);
     r = await call('GET', `/api/resumes/${sampleId}`);
-    assert.equal(r.status, 404); ok("another visitor can't open someone else's resume");
-    cookie = other;
+    assert.equal(r.status, 404); ok("another Google account can't see or open Ana's resumes");
+
+    cookie = '';
+    await signIn('111', 'ana@example.com');
+    const anaPhone = cookie;
+    assert.notEqual(anaPhone, ana);
+    r = await call('GET', '/api/resumes');
+    assert.equal(r.json.length, up ? 2 : 1); ok('Ana sees her resumes when she signs in on a second browser');
+
+    await signIn('111', 'ana@example.com');
+    assert.notEqual(cookie, anaPhone);
+    const fresh = cookie; cookie = anaPhone;
+    r = await call('GET', '/api/resumes');
+    assert.equal(r.status, 401); cookie = fresh; ok('signing in again replaces the old session cookie');
+
+    cookie = ana;
+    r = await call('GET', '/api/me');
+    assert.equal(r.json.user.signedIn, true); ok('the first browser is still signed in');
 
     r = await call('DELETE', `/api/resumes/${sampleId}`);
     assert.equal(r.status, 200);
     r = await call('GET', '/api/resumes');
     assert.equal(r.json.length, up ? 1 : 0); ok('delete removes the resume');
 
-    // ---- Google sign-in ----
-    cookie = '';
-    r = await call('GET', '/api/me');
-    assert.equal(r.json.user.signedIn, false);
-    r = await call('POST', '/api/resumes/sample'); const guestResume = r.json.id;
-    const guestCookie = cookie;
-    r = await call('POST', '/api/auth/google', { credential: 'bad' });
-    assert.equal(r.status, 401); ok('bad Google credential rejected');
-
-    r = await call('POST', '/api/auth/google', { credential: 'good:111:ana@example.com' });
-    assert.equal(r.status, 200); assert.equal(r.json.user.signedIn, true); assert.equal(r.json.user.email, 'ana@example.com');
-    assert.notEqual(cookie, guestCookie);
-    r = await call('GET', '/api/resumes');
-    assert.deepEqual(r.json.map((x) => x.id), [guestResume]); ok('signing in keeps the guest resume and starts a new session');
-
-    const signedIn = cookie; cookie = guestCookie;
-    r = await call('GET', '/api/resumes');
-    assert.deepEqual(r.json, []); ok('the old guest cookie stops working after sign-in');
-
-    cookie = '';
-    r = await call('POST', '/api/resumes/sample'); const phoneResume = r.json.id;
-    r = await call('POST', '/api/auth/google', { credential: 'good:111:ana@example.com' });
-    r = await call('GET', '/api/resumes');
-    assert.deepEqual(r.json.map((x) => x.id).sort(), [guestResume, phoneResume].sort());
-    ok('signing in on a second browser merges its guest resume into the account');
-
-    cookie = signedIn;
-    r = await call('GET', '/api/me');
-    assert.equal(r.json.user.signedIn, true); ok('both browsers stay signed in');
-
-    cookie = '';
-    r = await call('POST', '/api/auth/google', { credential: 'good:222:ben@example.com' });
-    r = await call('GET', '/api/resumes');
-    assert.deepEqual(r.json, []);
-    r = await call('GET', `/api/resumes/${guestResume}`);
-    assert.equal(r.status, 404); ok("another Google account can't see Ana's resumes");
-
-    cookie = signedIn;
     r = await call('POST', '/api/auth/logout');
     assert.equal(r.status, 200);
+    cookie = ana;
+    r = await call('GET', '/api/resumes');
+    assert.equal(r.status, 401);
     r = await call('GET', '/api/me');
-    assert.equal(r.json.user.signedIn, false);
-    r = await call('GET', '/api/resumes');
-    assert.deepEqual(r.json, []); ok('sign out ends the session and shows an empty guest');
+    assert.equal(r.json.user.signedIn, false); ok('sign out ends the session; the old cookie no longer works');
 
-    r = await call('POST', '/api/auth/google', { credential: 'good:111:ana@example.com' });
+    cookie = fresh;
     r = await call('GET', '/api/resumes');
-    assert.equal(r.json.length, 2); ok('signing back in brings the resumes back');
+    assert.equal(r.status, 200); ok("signing out one browser doesn't sign out the others");
 
     console.log('\nAll checks passed.');
   } catch (e) {

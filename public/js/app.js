@@ -445,6 +445,8 @@
   let tt;
   function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(tt); tt = setTimeout(() => { el.hidden = true; }, 3200); }
 
+  $('#foot-year').textContent = new Date().getFullYear();
+
   /* boot */
   (async function boot() {
     try {

@@ -37,8 +37,17 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
   const ok = (label) => console.log(`  ok  ${label}`);
 
   try {
+    // ---- landing page ----
+    const home = await call('GET', '/', undefined, true);
+    const html = await home.text();
+    assert.equal(home.status, 200); assert.equal(home.headers.get('cache-control'), 'no-cache');
+    assert.match(html, /src="\/js\/app\.js\?v=[0-9a-f]{10}"/); assert.match(html, /href="\/css\/app\.css\?v=[0-9a-f]{10}"/);
+    ok('landing page loads signed out, with versioned script and style links');
+    let r = await call('GET', '/api/sample');
+    assert.equal(r.status, 200); assert.ok(r.json.name); ok('sample preview data is public');
+
     // ---- signed out: nothing works ----
-    let r = await call('GET', '/api/me');
+    r = await call('GET', '/api/me');
     assert.equal(r.json.user.signedIn, false); assert.equal(cookie, '');
     for (const [m, u] of [['GET', '/api/resumes'], ['POST', '/api/resumes/sample'], ['GET', '/api/resumes/000000000000000000000000'], ['GET', '/api/resumes/000000000000000000000000/pdf']]) {
       r = await call(m, u);

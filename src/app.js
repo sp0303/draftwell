@@ -72,6 +72,18 @@ async function createResume(user, fields) {
   return { ...doc, _id: insertedId };
 }
 
+// index.html with a content hash on every /css and /js link, so browsers (and
+// Cloudflare's browser cache, which keeps assets for hours) pick up new code
+// right after a deploy. Built once at startup.
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+function buildIndexHtml() {
+  const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+  return html.replace(/(href|src)="(\/(?:css|js)\/[^"?]+)"/g, (m, attr, url) => {
+    const hash = crypto.createHash('sha1').update(fs.readFileSync(path.join(PUBLIC_DIR, url))).digest('hex').slice(0, 10);
+    return `${attr}="${url}?v=${hash}"`;
+  });
+}
+
 const safeFileName = (s) => (s || 'resume').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') || 'resume';
 
 /* ---------- app ---------- */
@@ -80,7 +92,12 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
-  app.use(express.static(path.join(__dirname, '..', 'public')));
+  const indexHtml = buildIndexHtml();
+  app.get(['/', '/index.html'], (req, res) => {
+    res.set('Cache-Control', 'no-cache');
+    res.type('html').send(indexHtml);
+  });
+  app.use(express.static(PUBLIC_DIR));
 
   app.get('/api/health', (req, res) => res.json({ ok: true, llm: llm.isConfigured() }));
   app.get('/api/sample', (req, res) => res.json(normalize(SAMPLE)));

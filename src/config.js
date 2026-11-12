@@ -27,4 +27,9 @@ module.exports = {
     // Tried in order when the main model is busy or fails.
     fallbackModels: (process.env.LLM_FALLBACK_MODELS || '').split(',').map((s) => s.trim()).filter(Boolean),
   },
+  // Second provider, tried after OpenRouter: NVIDIA API catalog (build.nvidia.com).
+  nvidia: {
+    apiKey: process.env.NVIDIA_API_KEY || '',
+    models: (process.env.NVIDIA_MODELS || 'minimaxai/minimax-m3.1-flash,nvidia/nemotron-3.5-lightning-30b-a3b').split(',').map((s) => s.trim()).filter(Boolean),
+  },
 };

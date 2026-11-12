@@ -1,24 +1,46 @@
 // Language model adapter. Everything that needs an LLM goes through here.
 //
-// Provider: OpenRouter (OpenAI-compatible chat completions API).
-// LLM_MODEL is tried first, then each of LLM_FALLBACK_MODELS in order, because
-// free models are often rate-limited upstream. If every model fails, the caller
-// falls back to the rule-based parser (extract.js) and assistant (assistant.js).
+// Providers, tried in this order (both use the OpenAI-compatible chat completions API):
+//   1. OpenRouter: LLM_MODEL, then each of LLM_FALLBACK_MODELS
+//   2. NVIDIA API catalog: each of NVIDIA_MODELS (when NVIDIA_API_KEY is set)
+// Free models are often busy or rate-limited, so a failure moves on to the next
+// model. If every model fails, the caller falls back to the rule-based parser
+// (extract.js) and assistant (assistant.js).
 
 const config = require('./config');
 const { THEME_IDS } = require('./schema');
 
-const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
-const ATTEMPT_TIMEOUT_MS = 35000;
 const TOTAL_BUDGET_MS = 90000;
 const MAX_REPLY_TOKENS = 6000;
 const SECTIONS = ['name', 'contact', 'summary', 'experience', 'education', 'skills', 'projects', 'certifications'];
 
-function isConfigured() {
-  return config.llm.provider === 'openrouter' && Boolean(config.llm.apiKey && config.llm.model);
+const PROVIDERS = {
+  openrouter: {
+    endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+    key: () => (config.llm.provider === 'openrouter' ? config.llm.apiKey : ''),
+    models: () => [config.llm.model, ...config.llm.fallbackModels],
+    headers: () => ({ 'HTTP-Referer': config.appUrl, 'X-Title': 'Resumely' }),
+    timeoutMs: 35000,
+  },
+  nvidia: {
+    endpoint: 'https://integrate.api.nvidia.com/v1/chat/completions',
+    key: () => config.nvidia.apiKey,
+    models: () => config.nvidia.models,
+    headers: () => ({}),
+    // NVIDIA's free endpoints are often queued; give up sooner and move on.
+    timeoutMs: 30000,
+  },
+};
+
+// Every (provider, model) pair to try, in order.
+function attempts() {
+  const seen = new Set();
+  return Object.entries(PROVIDERS).flatMap(([name, p]) => (p.key() ? p.models() : [])
+    .filter((m) => m && !seen.has(`${name}|${m}`) && seen.add(`${name}|${m}`))
+    .map((model) => ({ name, p, model })));
 }
 
-const models = () => [config.llm.model, ...config.llm.fallbackModels].filter((m, i, a) => m && a.indexOf(m) === i);
+const isConfigured = () => attempts().length > 0;
 
 // Pull the first JSON object out of a reply, tolerating ```json fences or chatter around it.
 function parseJson(text) {
@@ -30,25 +52,23 @@ function parseJson(text) {
   return null;
 }
 
-async function callOnce(model, messages, signal) {
-  const res = await fetch(ENDPOINT, {
+async function callOnce({ p, model }, messages, signal) {
+  const res = await fetch(p.endpoint, {
     method: 'POST',
     signal,
-    headers: {
-      Authorization: `Bearer ${config.llm.apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': config.appUrl,
-      'X-Title': 'Resumely',
-    },
+    headers: { Authorization: `Bearer ${p.key()}`, 'Content-Type': 'application/json', ...p.headers() },
     body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: MAX_REPLY_TOKENS, response_format: { type: 'json_object' } }),
   });
   const body = await res.json().catch(() => ({}));
+  const msg = (body.choices && body.choices[0] && body.choices[0].message) || {};
+  // Reasoning models may leave "content" empty and put the answer in a reasoning field.
+  const content = msg.content || msg.reasoning_content || msg.reasoning || '';
   // Tokens spent on this attempt; if the provider leaves usage out, estimate ~4 characters per token.
   const u = body.usage || {};
   const tokens = Number(u.total_tokens) || (Number(u.prompt_tokens) || 0) + (Number(u.completion_tokens) || 0)
-    || (res.ok ? Math.ceil((JSON.stringify(messages).length + String(body.choices?.[0]?.message?.content || '').length) / 4) : 0);
-  if (!res.ok || body.error) throw Object.assign(new Error(`${model}: ${res.status} ${(body.error && body.error.message) || 'request failed'}`), { tokens });
-  const content = body.choices && body.choices[0] && body.choices[0].message && body.choices[0].message.content;
+    || (res.ok ? Math.ceil((JSON.stringify(messages).length + String(content).length) / 4) : 0);
+  const err = body.error && (body.error.message || body.error) || body.detail || body.title;
+  if (!res.ok || body.error) throw Object.assign(new Error(`${model}: ${res.status} ${String(err || 'request failed').slice(0, 200)}`), { tokens });
   const json = parseJson(content);
   if (!json || typeof json !== 'object') throw Object.assign(new Error(`${model}: reply was not JSON`), { tokens });
   return { json, tokens };
@@ -60,16 +80,17 @@ async function callJson(messages, accept = () => true) {
   const started = Date.now();
   const errors = [];
   let tokens = 0;
-  for (const model of models()) {
+  for (const a of attempts()) {
+    const { model } = a;
     const left = TOTAL_BUDGET_MS - (Date.now() - started);
     if (left < 5000) break;
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), Math.min(ATTEMPT_TIMEOUT_MS, left));
+    const timer = setTimeout(() => ctrl.abort(), Math.min(a.p.timeoutMs, left));
     try {
-      const out = await callOnce(model, messages, ctrl.signal);
+      const out = await callOnce(a, messages, ctrl.signal);
       tokens += out.tokens;
       if (!accept(out.json)) throw new Error(`${model}: reply was missing required fields`);
-      return { json: out.json, model, tokens };
+      return { json: out.json, model: `${a.name}:${model}`, tokens };
     } catch (e) {
       tokens += e.tokens || 0;
       errors.push(e.name === 'AbortError' ? `${model}: timed out` : e.message);

@@ -10,6 +10,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
   const mongo = await MongoMemoryServer.create();
   process.env.UPLOAD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'resumely-e2e-'));
   process.env.LLM_API_KEY = ''; // keep the tests on the built-in rules, never a live model
+  process.env.NVIDIA_API_KEY = '';
   process.env.ADMIN_EMAILS = 'boss@example.com';
   process.env.AI_STARTING_CREDITS = '100';
   const { parseJson } = require('../src/llm');

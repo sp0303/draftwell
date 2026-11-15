@@ -489,3 +489,13 @@ p{margin:0}
 .subbar .ats-pill b{font-size:12px}
 .subbar .hl-toggle{font-size:12.5px}
 .admin-table .keyno{font-size:11.5px;color:var(--muted);background:var(--surface-2);border-radius:999px;padding:1px 7px;margin-left:4px}
+
+/* admin: AI routing */
+.routing{display:grid;gap:10px}
+.routing-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.routing-head h3{font-size:17px;font-family:var(--f-display)}
+.routing-note{font-size:12.5px;color:var(--muted);flex:1;min-width:220px}
+.routing-head .btn{padding:6px 12px;font-size:13px}
+.admin-table .why{font-size:12px;color:var(--muted)}
+.admin-table .prow td{background:color-mix(in srgb,var(--surface-2) 60%,transparent)}
+.res.warnc{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}

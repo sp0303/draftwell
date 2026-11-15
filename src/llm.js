@@ -16,31 +16,96 @@ const TOTAL_BUDGET_MS = 90000;
 // fast instead of burning the time budget (seen in production: 6,600 tokens of
 // non-JSON for a keyword list).
 const MAX_REPLY_TOKENS = { upload: 5000, chat: 5000, 'job keywords': 1800, spelling: 2500 };
-// A model that answers "429, busy" is skipped for this long, so busy models stop
-// costing a try (and one of OpenRouter's daily free requests) on every call.
-const BUSY_COOL_DOWN_MS = 10 * 60 * 1000;
-const busyUntil = new Map(); // "provider|model" -> timestamp
-// With several keys for one provider: requests take turns, and a key that is
-// rate-limited (429) or rejected (401/403) sits out while the other keys carry on.
+// ---- intelligent routing ----
+// What the router knows about each provider, key and model lives in aistate.js and is
+// saved to the database, so it survives restarts and resets itself when rests expire.
+//  - A provider that says its daily limit is used up rests until its reset time
+//    (midnight UTC), so requests go straight to the next provider. OpenRouter also
+//    rests once our own count of today's free requests reaches the limit.
+//  - A key or model that answers 429 rests 10, then 30, then 60 minutes.
+//  - A rejected key (401/403) rests an hour; with several keys, the next key takes over.
+//  - A model that failed twice in a row recently goes behind the healthy ones.
+const aistate = require('./aistate');
 const KEY_DENIED_MS = 60 * 60 * 1000;
-const keyUntil = new Map(); // "provider|keyNo" -> timestamp
+const utcDay = () => new Date().toISOString().slice(0, 10);
+const nextUtcMidnight = () => { const d = new Date(); d.setUTCHours(24, 0, 0, 0); return d.getTime(); };
+const isFree = (model) => /:free$/.test(model);
+const pid = (name) => `provider:${name}`;
+const mid = (name, model) => `model:${name}|${model}`;
+const kid = (name, no) => `key:${name}:${no}`;
+
+// Today's OpenRouter free-model requests, per key: each OpenRouter account has its own
+// daily limit, and failed requests count too. Read from the AI request log once a
+// minute, plus requests made since. (Log rows from before keys were numbered are key 1.)
+const free = { day: '', n: {}, readAt: 0 };
+const freeUsed = (no) => (free.day === utcDay() ? free.n[no] || 0 : 0);
+function countFree(no) {
+  if (free.day !== utcDay()) Object.assign(free, { day: utcDay(), n: {} });
+  free.n[no] = (free.n[no] || 0) + 1;
+}
+async function readFreeCount() {
+  const day = utcDay();
+  if (free.day === day && Date.now() - free.readAt < 60 * 1000) return;
+  free.readAt = Date.now();
+  try {
+    const rows = await require('./db').col('ai_calls').aggregate([
+      { $match: { day, provider: 'openrouter', model: /:free$/ } },
+      { $group: { _id: { $ifNull: ['$key', 1] }, n: { $sum: 1 } } },
+    ]).toArray();
+    if (free.day !== day) Object.assign(free, { day, n: {} });
+    rows.forEach((r) => { free.n[r._id] = Math.max(free.n[r._id] || 0, r.n); });
+  } catch (e) { if (free.day !== day) Object.assign(free, { day, n: {} }); }
+}
+// An OpenRouter key whose free requests for today are used up.
+function freeKeyUsedUp(no, model) {
+  return isFree(model) && freeUsed(no) >= config.openrouterDailyLimit;
+}
+function providerResting(name, model, now) {
+  if (aistate.restingUntil(pid(name), now)) return true;
+  if (name === 'openrouter' && isFree(model)) {
+    const n = PROVIDERS.openrouter.keys().length;
+    const usable = Array.from({ length: n }, (_, i) => i + 1)
+      .filter((no) => !freeKeyUsedUp(no, model) && !aistate.restingUntil(kid(name, no), now));
+    if (n && !usable.length) {
+      if (Array.from({ length: n }, (_, i) => i + 1).every((no) => freeKeyUsedUp(no, model))) {
+        aistate.rest(pid(name), nextUtcMidnight(), `daily free limit (${config.openrouterDailyLimit} per key) reached on every key`);
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+// With several keys for one provider, requests take turns; resting keys go last.
 const keyTurn = new Map(); // provider -> next key to start with
-function keyOrder(provider, keys) {
+function keyOrder(provider, keys, model) {
   const list = keys.map((key, i) => ({ key, no: i + 1 }));
-  if (list.length < 2) return list;
-  const start = (keyTurn.get(provider) || 0) % list.length;
+  // An OpenRouter key out of free requests for today is left out (if another key isn't).
+  const fresh = provider === 'openrouter' ? list.filter((x) => !freeKeyUsedUp(x.no, model)) : list;
+  const usable = fresh.length ? fresh : list;
+  if (usable.length < 2) return usable;
+  const start = (keyTurn.get(provider) || 0) % usable.length;
   keyTurn.set(provider, start + 1);
-  const turned = list.slice(start).concat(list.slice(0, start));
+  const turned = usable.slice(start).concat(usable.slice(0, start));
   const now = Date.now();
-  const ready = turned.filter((x) => !(keyUntil.get(`${provider}|${x.no}`) > now));
+  const ready = turned.filter((x) => !aistate.restingUntil(kid(provider, x.no), now));
   return ready.length ? ready.concat(turned.filter((x) => !ready.includes(x))) : turned;
+}
+
+// The order for this request: providers at their limit are left out (unless nothing else
+// is left), then ready models, then failing ones, then resting ones.
+function routeOrder(all, now) {
+  const open = all.filter((a) => !providerResting(a.name, a.model, now));
+  const pool = open.length ? open : all;
+  const rank = (a) => (aistate.restingUntil(mid(a.name, a.model), now) ? 2 : aistate.failing(mid(a.name, a.model), now) ? 1 : 0);
+  return { order: pool.map((a, i) => ({ a, i, r: rank(a) })).sort((x, y) => x.r - y.r || x.i - y.i).map((x) => x.a), skipped: open.length > 0 };
 }
 const SECTIONS = ['name', 'contact', 'summary', 'experience', 'education', 'skills', 'projects', 'certifications'];
 
 const PROVIDERS = {
   openrouter: {
     endpoint: 'https://openrouter.ai/api/v1/chat/completions',
-    keys: () => (config.llm.provider === 'openrouter' && config.llm.apiKey ? [config.llm.apiKey] : []),
+    keys: () => (config.llm.provider === 'openrouter' ? config.llm.apiKeys : []), // one or more (LLM_API_KEY, comma separated)
     models: () => [config.llm.model, ...config.llm.fallbackModels],
     headers: () => ({ 'HTTP-Referer': config.appUrl, 'X-Title': 'Resumely' }),
     timeoutMs: 30000,
@@ -100,7 +165,14 @@ async function callOnce({ p, model }, messages, signal, maxTokens, key) {
   const err = body.error && (body.error.message || body.error) || body.detail || body.title;
   if (!res.ok || body.error) {
     const code = Number(body.error && body.error.code) || res.status;
-    throw Object.assign(new Error(`${model}: ${code} ${String(err || 'request failed').slice(0, 200)}`), { tokens, busy: code === 429, denied: code === 401 || code === 403 });
+    const text = String(err || 'request failed');
+    // OpenRouter's own account limits (not one busy model): "free-models-per-day" / "free-models-per-min".
+    // Same idea for any provider: a daily quota or used-up credits (402) rest it until tomorrow.
+    const scope = code === 402 || (code === 429 && /free-models-per-day|per[- ]day|daily|quota|credits?\b/i.test(text)) ? 'day'
+      : code === 429 && /free-models-per-min|per[- ]min/i.test(text) ? 'minute' : null;
+    const h = (body.error && body.error.metadata && body.error.metadata.headers) || {};
+    const resetAt = Number(h['X-RateLimit-Reset'] || h['x-ratelimit-reset']) || null;
+    throw Object.assign(new Error(`${model}: ${code} ${text.slice(0, 200)}`), { tokens, busy: code === 429, denied: code === 401 || code === 403, scope, resetAt });
   }
   if (!String(content).trim()) throw Object.assign(new Error(`${model}: empty reply`), { tokens });
   const json = parseJson(content);
@@ -116,14 +188,12 @@ async function callJson(task, messages, accept = () => true) {
   const started = Date.now();
   const errors = [];
   let tokens = 0;
-  // Models cooling down after a 429 go last rather than first (still tried if all else fails).
-  const all = attempts();
-  const now = Date.now();
-  const ready = all.filter((a) => !(busyUntil.get(`${a.name}|${a.model}`) > now));
-  const order = ready.concat(all.filter((a) => !ready.includes(a)));
+  await Promise.all([aistate.load(), readFreeCount()]);
+  const { order, skipped } = routeOrder(attempts(), Date.now());
   for (const a of order) {
     const { model } = a;
-    const keys = keyOrder(a.name, a.p.keys());
+    if (skipped && providerResting(a.name, model, Date.now())) continue; // reached its limit during this request
+    const keys = keyOrder(a.name, a.p.keys(), model);
     // With several keys, a key that is rate-limited or rejected sits out and the
     // same model is retried at once on the next key.
     for (let k = 0; k < keys.length; k++) {
@@ -136,11 +206,13 @@ async function callJson(task, messages, accept = () => true) {
       let spent = 0;
       const keyNo = a.p.keys().length > 1 ? no : undefined;
       try {
+        if (a.name === 'openrouter' && isFree(model)) countFree(no); // OpenRouter counts every request, failed ones too
         const out = await callOnce(a, messages, ctrl.signal, MAX_REPLY_TOKENS[task] || 5000, key);
-        busyUntil.delete(`${a.name}|${model}`);
         spent = out.tokens;
         tokens += out.tokens;
         if (!accept(out.json)) throw new Error(`${model}: reply was missing required fields`);
+        aistate.success(mid(a.name, model), Date.now() - t0);
+        if (keyNo) aistate.success(kid(a.name, no), Date.now() - t0);
         ailog.record({ task, provider: a.name, model, key: keyNo, ok: true, ms: Date.now() - t0, tokens: spent });
         return { json: out.json, model: `${a.name}:${model}${keyNo ? ` (key ${keyNo})` : ''}`, tokens };
       } catch (e) {
@@ -148,13 +220,25 @@ async function callJson(task, messages, accept = () => true) {
         const why = e.name === 'AbortError' ? `${model}: timed out` : e.message;
         errors.push(keyNo ? `${why} [key ${keyNo}]` : why);
         ailog.record({ task, provider: a.name, model, key: keyNo, ok: false, ms: Date.now() - t0, tokens: spent, error: why.replace(`${model}: `, '') });
-        const keyProblem = e.busy || e.denied;
-        if (keyProblem && keys.length > 1) {
-          keyUntil.set(`${a.name}|${no}`, Date.now() + (e.denied ? KEY_DENIED_MS : BUSY_COOL_DOWN_MS));
-          continue; // same model, next key
+        if (e.scope) {
+          // An account limit, not this model: rest the key (if there are others) or the whole provider.
+          const until = e.scope === 'day' ? (e.resetAt > Date.now() ? e.resetAt : nextUtcMidnight()) : Date.now() + 60 * 1000;
+          const reason = e.scope === 'day' ? 'daily limit reached' : 'per-minute limit reached';
+          if (keys.length > 1) { aistate.rest(kid(a.name, no), until, reason); continue; }
+          aistate.rest(pid(a.name), until, reason);
+          console.log(`${a.name}: ${reason}; skipping it until ${new Date(until).toISOString()}`);
+          break;
         }
-        if (e.busy) busyUntil.set(`${a.name}|${model}`, Date.now() + BUSY_COOL_DOWN_MS);
-        break; // a model problem: move on to the next model
+        if ((e.busy || e.denied) && keys.length > 1) {
+          // This key is the problem: rest it and retry the same model on the next key.
+          if (e.denied) aistate.rest(kid(a.name, no), Date.now() + KEY_DENIED_MS, 'key rejected (401/403)');
+          else aistate.restBusy(kid(a.name, no));
+          continue;
+        }
+        if (e.denied) aistate.rest(pid(a.name), Date.now() + KEY_DENIED_MS, 'key rejected (401/403)');
+        else if (e.busy) aistate.restBusy(mid(a.name, model));
+        else aistate.failure(mid(a.name, model)); // timed out, empty or bad reply: counts toward "failing"
+        break; // move on to the next model
       } finally {
         clearTimeout(timer);
       }
@@ -305,4 +389,34 @@ Rules:
   return { issues: json.issues, tokens };
 }
 
-module.exports = { isConfigured, extractResume, chat, jobKeywords, proofread, parseJson };
+// Forget every rest and track record (admin "Reset", and tests). Today's request count
+// stays: it is read from the request log, which a reset doesn't change.
+async function resetLimits({ clearCount = false } = {}) {
+  keyTurn.clear();
+  await aistate.reset();
+  if (clearCount) Object.assign(free, { day: utcDay(), n: {}, readAt: Date.now() });
+}
+
+// For the admin page: every provider, key and model with its routing state.
+async function routingStatus() {
+  await Promise.all([aistate.load(true), readFreeCount()]);
+  const now = Date.now();
+  const row = (id, label) => {
+    const d = aistate.get(id);
+    const until = aistate.restingUntil(id, now);
+    return {
+      id, label,
+      state: until ? 'resting' : aistate.failing(id, now) ? 'failing' : 'ready',
+      restUntil: until ? new Date(until) : null, reason: until ? d.reason || null : null,
+      failStreak: d.failStreak || 0, avgMs: d.avgMs || null, lastOkAt: d.lastOkAt || null,
+    };
+  };
+  const providers = Object.keys(PROVIDERS).filter((n) => PROVIDERS[n].keys().length);
+  return {
+    providers: providers.map((n) => ({ ...row(pid(n), n), keys: PROVIDERS[n].keys().length > 1 ? PROVIDERS[n].keys().map((_, i) => row(kid(n, i + 1), `key ${i + 1}`)) : [] })),
+    models: attempts().map((a) => ({ provider: a.name, model: a.model, ...row(mid(a.name, a.model), a.model) })),
+    openrouterFree: { used: Object.values(free.day === utcDay() ? free.n : {}).reduce((a, b) => a + b, 0), perKey: PROVIDERS.openrouter.keys().map((_, i) => freeUsed(i + 1)), limit: config.openrouterDailyLimit },
+  };
+}
+
+module.exports = { isConfigured, extractResume, chat, jobKeywords, proofread, parseJson, resetLimits, routingStatus };

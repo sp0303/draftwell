@@ -77,16 +77,29 @@ function router() {
     const models = byModel.map((m) => ({ provider: m._id.provider, model: m._id.model, calls: m.calls, ok: m.ok, failed: m.calls - m.ok, tokens: m.tokens, avgMs: Math.round(m.ms || 0), last: m.last }));
     const sum = (k) => models.reduce((a, m) => a + m[k], 0);
     const openrouter = models.filter((m) => m.provider === 'openrouter' && /:free$/.test(m.model)).reduce((a, m) => a + m.calls, 0);
+    // Each OpenRouter key (account) has its own daily free limit.
+    const orKeys = Math.max(1, config.llm.apiKeys.length);
+    const byKey = await calls.aggregate([{ $match: { day, provider: 'openrouter', model: /:free$/ } }, { $group: { _id: { $ifNull: ['$key', 1] }, n: { $sum: 1 } } }]).toArray();
+    const perKey = Array.from({ length: orKeys }, (_, i) => (byKey.find((k) => k._id === i + 1) || { n: 0 }).n);
     res.json({
       day,
       totals: { calls: sum('calls'), ok: sum('ok'), failed: sum('failed'), tokens: sum('tokens') },
-      openrouterFree: { used: openrouter, limit: config.openrouterDailyLimit },
+      openrouterFree: { used: openrouter, limit: config.openrouterDailyLimit * orKeys, perKey, perKeyLimit: config.openrouterDailyLimit },
       lastAnswer: recent.find((c) => c.ok) ? { provider: recent.find((c) => c.ok).provider, model: recent.find((c) => c.ok).model, at: recent.find((c) => c.ok).at } : null,
       models,
       tasks: byTask.map((t) => ({ task: t._id, calls: t.calls, ok: t.ok })),
       days: days.map((d) => ({ day: d._id, calls: d.calls, ok: d.ok })),
       recent: recent.map((c) => ({ at: c.at, task: c.task, provider: c.provider, key: c.key || null, model: c.model, ok: c.ok, ms: c.ms, tokens: c.tokens, error: c.error, email: emailOf.get(String(c.userId)) || '' })),
     });
+  }));
+
+  // AI routing: every provider, key and model with its state (ready, resting, failing).
+  r.get('/ai-routing', wrap(async (req, res) => res.json(await require('./llm').routingStatus())));
+  // Clear every rest and track record, so all models are tried again from the top.
+  r.post('/ai-routing/reset', wrap(async (req, res) => {
+    await require('./llm').resetLimits();
+    console.log(`Admin ${req.user.google.email} reset AI routing`);
+    res.json(await require('./llm').routingStatus());
   }));
 
   // Body: { add: n } to grant (or take away, if negative), or { set: n } to set the balance.

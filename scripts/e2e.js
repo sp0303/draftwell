@@ -24,7 +24,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
     const cfg = require('../src/config');
     const llm = require('../src/llm');
     const saved = { ...cfg.llm };
-    Object.assign(cfg.llm, { provider: 'openrouter', apiKey: 'test-key', model: 'busy', fallbackModels: ['empty', 'good'] });
+    Object.assign(cfg.llm, { provider: 'openrouter', apiKeys: ['test-key'], model: 'busy', fallbackModels: ['empty', 'good'] });
     const realFetch = global.fetch;
     const calls = [];
     global.fetch = async (url, opt) => {
@@ -36,6 +36,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
       return reply({ choices: [{ message: { content: '{"title":"Dev","keywords":[{"term":"React","required":true}]}' } }], usage: { total_tokens: 50 } });
     };
     try {
+      await llm.resetLimits({ clearCount: true });
       const a = await llm.jobKeywords('Dev\nReact');
       assert.equal(a.job.keywords[0].term, 'React');
       assert.deepEqual(calls, ['busy:1800', 'empty:1800', 'good:1800']);
@@ -43,6 +44,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
       await llm.jobKeywords('Dev\nReact');
       assert.deepEqual(calls, ['empty:1800', 'good:1800'], 'the busy model is skipped while cooling down');
       // LLM_ORDER mixes providers; entries for a provider without a key are skipped.
+      await llm.resetLimits({ clearCount: true });
       calls.length = 0;
       const nvSaved = { ...cfg.nvidia };
       Object.assign(cfg.nvidia, { apiKeys: ['nv-test'], models: ['nv-model'] });
@@ -60,6 +62,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 
       // Two NVIDIA keys: key A is rate-limited, so the same model is retried at once on key B,
       // and the next request starts with key B while A sits out.
+      await llm.resetLimits({ clearCount: true });
       Object.assign(cfg.nvidia, { apiKeys: ['key-A', 'key-B'] });
       cfg.llm.order = ['nvidia:nv-model'];
       calls.length = 0;
@@ -74,9 +77,74 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
       await llm.jobKeywords('Dev\nReact');
       await llm.jobKeywords('Dev\nReact');
       assert.deepEqual(calls, ['nv-model@key-A', 'nv-model@key-B', 'nv-model@key-B'], 'a rate-limited key sits out; the other key takes over');
+
+      // OpenRouter's daily free limit: once it says so, every OpenRouter model is skipped
+      // and requests go straight to NVIDIA.
+      await llm.resetLimits({ clearCount: true });
+      Object.assign(cfg.nvidia, { apiKeys: ['nv-key'] });
+      cfg.llm.order = ['openrouter:or-a:free', 'openrouter:or-b:free', 'nvidia:nv-model'];
+      let orAnswer = 'limit';
+      global.fetch = async (url, opt) => {
+        const b = JSON.parse(opt.body);
+        calls.push(`${url.includes('nvidia') ? 'nv' : 'or'}:${b.model}`);
+        const reply = (o, status = 200) => ({ ok: status === 200, status, json: async () => o });
+        if (!url.includes('nvidia') && orAnswer === 'limit') {
+          return reply({ error: { code: 429, message: 'Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day', metadata: { headers: { 'X-RateLimit-Reset': String(Date.now() + 3600e3) } } } }, 429);
+        }
+        return reply({ choices: [{ message: { content: '{"title":"Dev","keywords":[{"term":"React","required":true}]}' } }] });
+      };
+      calls.length = 0;
+      await llm.jobKeywords('Dev\nReact');
+      await llm.jobKeywords('Dev\nReact');
+      assert.deepEqual(calls, ['or:or-a:free', 'nv:nv-model', 'nv:nv-model'], 'after "free-models-per-day", OpenRouter is skipped entirely');
+
+      // Our own count: at the daily limit, OpenRouter is skipped before it has to say no.
+      await llm.resetLimits({ clearCount: true });
+      const savedLimit = cfg.openrouterDailyLimit;
+      cfg.openrouterDailyLimit = 2;
+      orAnswer = 'ok';
+      calls.length = 0;
+      for (let i = 0; i < 3; i++) await llm.jobKeywords('Dev\nReact');
+      assert.deepEqual(calls, ['or:or-a:free', 'or:or-a:free', 'nv:nv-model'], 'the third request skips OpenRouter (2 of 2 used)');
+      cfg.openrouterDailyLimit = savedLimit;
+
+      // A model that keeps failing (empty replies, timeouts) moves behind healthy ones.
+      await llm.resetLimits({ clearCount: true });
+      cfg.llm.order = ['openrouter:flaky', 'openrouter:solid'];
+      global.fetch = async (url, opt) => {
+        const b = JSON.parse(opt.body);
+        calls.push(`or:${b.model}`);
+        const content = b.model === 'flaky' ? '' : '{"title":"Dev","keywords":[{"term":"React","required":true}]}';
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) };
+      };
+      calls.length = 0;
+      for (let i = 0; i < 3; i++) await llm.jobKeywords('Dev\nReact');
+      assert.deepEqual(calls, ['or:flaky', 'or:solid', 'or:flaky', 'or:solid', 'or:solid'], 'after 2 failures in a row, the healthy model goes first');
+
+      // Two OpenRouter accounts: each key has its own daily count. Key 1 used up -> key 2,
+      // both used up -> straight to NVIDIA.
+      await llm.resetLimits({ clearCount: true });
+      cfg.llm.apiKeys = ['or-key-1', 'or-key-2'];
+      Object.assign(cfg.nvidia, { apiKeys: ['nv-key'], models: ['nv-model'] });
+      cfg.llm.order = ['openrouter:or-a:free', 'nvidia:nv-model'];
+      cfg.openrouterDailyLimit = 1;
+      global.fetch = async (url, opt) => {
+        const b = JSON.parse(opt.body);
+        const key = opt.headers.Authorization.replace('Bearer ', '');
+        calls.push(url.includes('nvidia') ? 'nv' : `or@${key}`);
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{"title":"Dev","keywords":[{"term":"React","required":true}]}' } }] }) };
+      };
+      calls.length = 0;
+      for (let i = 0; i < 3; i++) await llm.jobKeywords('Dev\nReact');
+      assert.deepEqual(calls, ['or@or-key-1', 'or@or-key-2', 'nv'], 'per-key daily counts: key 1, then key 2, then NVIDIA');
+      cfg.openrouterDailyLimit = savedLimit;
+      await llm.resetLimits({ clearCount: true });
+      await llm.resetLimits({ clearCount: true });
       Object.assign(cfg.nvidia, nvSaved);
     } finally { global.fetch = realFetch; Object.assign(cfg.llm, saved); }
     console.log('  ok  busy models cool down, empty replies fall through, reply cap per task, LLM_ORDER mixes providers, a rate-limited key hands over to the other key');
+    console.log("  ok  OpenRouter's daily limit (it says so, or our per-key count reaches it) sends requests straight to the next key, then NVIDIA");
+    console.log('  ok  models that keep failing go behind healthy ones');
   }
   const db = require('../src/db');
   const { createApp } = require('../src/app');
@@ -341,7 +409,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 
     // Out of credits: the model is skipped and the built-in rules answer.
     const savedLlm = { ...config.llm };
-    Object.assign(config.llm, { provider: 'openrouter', apiKey: 'test-not-used', model: 'test/model' });
+    Object.assign(config.llm, { provider: 'openrouter', apiKeys: ['test-not-used'], model: 'test/model' });
     await col('users').updateOne({ _id: anaDoc._id }, { $set: { credits: 0 } });
     r = await call('POST', `/api/resumes/${jdResume}/chat`, { message: 'add skill Go' });
     Object.assign(config.llm, savedLlm);
@@ -375,6 +443,15 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
     assert.deepEqual(r.json.tasks.map((x) => x.task).sort(), ['chat', 'spelling']);
     assert.equal(r.json.recent.length, 3); assert.equal(r.json.days.at(-1).calls, 3);
     ok('admin AI usage: requests today by provider and model, OpenRouter free count, tasks, last 7 days, latest calls');
+    const aistate = require('../src/aistate');
+    aistate.rest('model:openrouter|test-model', Date.now() + 3600e3, 'test rest');
+    await new Promise((res) => setTimeout(res, 200));
+    assert.equal((await col('ai_state').findOne({ _id: 'model:openrouter|test-model' })).reason, 'test rest');
+    r = await call('GET', '/api/admin/ai-routing');
+    assert.equal(r.status, 200); assert.ok(Array.isArray(r.json.models)); assert.ok(r.json.openrouterFree);
+    r = await call('POST', '/api/admin/ai-routing/reset');
+    assert.equal(r.status, 200); assert.equal(await col('ai_state').countDocuments(), 0);
+    ok('AI routing state is saved in the database; the admin can see it and reset it');
     r = await call('POST', `/api/admin/users/${anaRow.id}/credits`, { add: 50 });
     assert.equal(r.status, 200); assert.equal(r.json.credits, 50);
     r = await call('POST', `/api/admin/users/${anaRow.id}/credits`, { set: 500 });

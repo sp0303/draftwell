@@ -292,6 +292,19 @@
         <p class="ai-note">Every try at a model counts as one request, the same way OpenRouter counts them. One chat message can take several tries when a model is busy.</p>
         <div class="stats" id="ai-totals"></div>
         <div class="ai-free" id="ai-free"></div>
+        <div class="routing">
+          <div class="routing-head">
+            <h3>AI routing</h3>
+            <span class="routing-note">The order requests try right now. Resting means skipped until the time shown; it resets on its own.</span>
+            <button class="btn" id="ai-reset" type="button">Reset all</button>
+          </div>
+          <div class="table-wrap">
+            <table class="admin-table">
+              <thead><tr><th class="num">#</th><th>Provider</th><th>Model or key</th><th>State</th><th class="num">Avg time</th><th>Last answered</th></tr></thead>
+              <tbody id="ai-routing"></tbody>
+            </table>
+          </div>
+        </div>
         <div class="table-wrap">
           <table class="admin-table">
             <thead><tr><th>Provider</th><th>Model</th><th class="num">Requests</th><th class="num">Answered</th><th class="num">Failed</th><th class="num">Avg time</th><th class="num">Tokens</th><th>Last used</th></tr></thead>

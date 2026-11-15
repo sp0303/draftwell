@@ -621,9 +621,9 @@
   };
   async function renderAdmin() {
     try {
-      const [users, ai] = await Promise.all([api('GET', '/api/admin/users'), api('GET', '/api/admin/ai')]);
+      const [users, ai, routing] = await Promise.all([api('GET', '/api/admin/users'), api('GET', '/api/admin/ai'), api('GET', '/api/admin/ai-routing')]);
       adminData = users;
-      drawAdmin(); drawAiUsage(ai);
+      drawAdmin(); drawAiUsage(ai); drawRouting(routing);
     } catch (e) { toast(e.message); }
   }
   const PROVIDER = { openrouter: 'OpenRouter', nvidia: 'NVIDIA' };
@@ -637,7 +637,8 @@
       + `<div class="wide"><b class="model">${esc(last)}</b><span>Last answered by${a.lastAnswer ? ` · ${when(a.lastAnswer.at)}` : ''}</span></div>`;
     const f = a.openrouterFree;
     const pct = Math.min(100, Math.round((f.used / f.limit) * 100));
-    $('#ai-free').innerHTML = `<div class="ai-free-row"><span>OpenRouter free requests today</span><b>${fmtN(f.used)} of ${fmtN(f.limit)}</b></div>
+    const keysTxt = (f.perKey || []).length > 1 ? ` <span class="why">(${f.perKey.map((n, i) => `key ${i + 1}: ${fmtN(n)} of ${fmtN(f.perKeyLimit)}`).join(', ')})</span>` : '';
+    $('#ai-free').innerHTML = `<div class="ai-free-row"><span>OpenRouter free requests today${keysTxt}</span><b>${fmtN(f.used)} of ${fmtN(f.limit)}</b></div>
       <div class="ai-bar${pct >= 90 ? ' hot' : pct >= 60 ? ' warm' : ''}"><i style="width:${pct}%"></i></div>
       <p>${f.used >= f.limit ? 'Used up for today: requests now go to NVIDIA, then the built-in rules.' : `Resets at midnight UTC. Failed attempts count too.`}</p>`;
     $('#ai-models').innerHTML = a.models.length ? a.models.map((m) => `<tr>
@@ -655,6 +656,35 @@
       <td class="num">${secs(c.ms)}</td><td class="num">${fmtN(c.tokens)}</td></tr>`).join('')
       : '<tr><td colspan="8" class="empty">No AI requests yet.</td></tr>';
   }
+  function drawRouting(r) {
+    const hhmm = (d) => new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const stateCell = (x) => (x.state === 'resting'
+      ? `<span class="res bad">Resting until ${hhmm(x.restUntil)}</span> <span class="why">${esc(x.reason || '')}</span>`
+      : x.state === 'failing' ? `<span class="res warnc">Failing (${x.failStreak} in a row)</span> <span class="why">tried after healthy models</span>`
+        : '<span class="res ok">Ready</span>');
+    const prov = Object.fromEntries(r.providers.map((p) => [p.id.replace('provider:', ''), p]));
+    const rows = [];
+    // providers (and their keys) that are resting or have several keys
+    r.providers.forEach((p) => {
+      if (p.state !== 'ready' || p.keys.length) {
+        rows.push(`<tr class="prow"><td class="num">—</td><td>${esc(PROVIDER[p.label] || p.label)}</td><td><b>Whole provider</b></td><td>${stateCell(p)}</td><td class="num">—</td><td>—</td></tr>`);
+        p.keys.forEach((k) => rows.push(`<tr class="prow"><td class="num">—</td><td>${esc(PROVIDER[p.label] || p.label)}</td><td>${esc(k.label)}</td><td>${stateCell(k)}</td><td class="num">${k.avgMs ? secs(k.avgMs) : '—'}</td><td>${k.lastOkAt ? when(k.lastOkAt) : '—'}</td></tr>`));
+      }
+    });
+    r.models.forEach((m, i) => {
+      const p = prov[m.provider];
+      const shown = p && p.state === 'resting' ? { ...p } : m; // a resting provider rests all its models
+      rows.push(`<tr><td class="num">${i + 1}</td><td>${esc(PROVIDER[m.provider] || m.provider)}</td><td class="mono">${esc(m.model)}</td><td>${stateCell(shown)}</td><td class="num">${m.avgMs ? secs(m.avgMs) : '—'}</td><td>${m.lastOkAt ? when(m.lastOkAt) : '—'}</td></tr>`);
+    });
+    $('#ai-routing').innerHTML = rows.join('') || '<tr><td colspan="6" class="empty">No AI providers set up.</td></tr>';
+  }
+  $('#ai-reset').addEventListener('click', async () => {
+    const b = $('#ai-reset');
+    b.disabled = true;
+    try { drawRouting(await api('POST', '/api/admin/ai-routing/reset')); toast('AI routing reset: every model is ready again'); } catch (e) { toast(e.message); }
+    b.disabled = false;
+  });
+
   function shortErr(e) {
     const s = String(e || '');
     if (/timed out/i.test(s)) return 'Timed out';

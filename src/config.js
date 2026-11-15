@@ -24,7 +24,8 @@ module.exports = {
   adminEmails: (process.env.ADMIN_EMAILS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
   llm: {
     provider: process.env.LLM_PROVIDER || '',
-    apiKey: process.env.LLM_API_KEY || '',
+    // One key, or several separated by commas (one per OpenRouter account; each has its own daily free limit).
+    apiKeys: (process.env.LLM_API_KEY || '').split(',').map((s) => s.trim()).filter(Boolean),
     model: process.env.LLM_MODEL || '',
     // Tried in order when the main model is busy or fails.
     fallbackModels: (process.env.LLM_FALLBACK_MODELS || '').split(',').map((s) => s.trim()).filter(Boolean),

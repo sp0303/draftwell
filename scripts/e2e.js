@@ -18,6 +18,32 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
   assert.deepEqual(parseJson('Sure! Here it is: {"a":{"b":2}} hope that helps'), { a: { b: 2 } });
   assert.equal(parseJson('no json here'), null);
   console.log('  ok  model replies with code fences or extra text are parsed');
+  {
+    // Model order with a fake provider: "busy" answers 429, "empty" answers nothing, "good" answers.
+    const cfg = require('../src/config');
+    const llm = require('../src/llm');
+    const saved = { ...cfg.llm };
+    Object.assign(cfg.llm, { provider: 'openrouter', apiKey: 'test-key', model: 'busy', fallbackModels: ['empty', 'good'] });
+    const realFetch = global.fetch;
+    const calls = [];
+    global.fetch = async (url, opt) => {
+      const b = JSON.parse(opt.body);
+      calls.push(`${b.model}:${b.max_tokens}`);
+      const reply = (o, status = 200) => ({ ok: status === 200, status, json: async () => o });
+      if (b.model === 'busy') return reply({ error: { code: 429, message: 'Provider returned error' } }, 429);
+      if (b.model === 'empty') return reply({ choices: [{ message: { content: '' } }], usage: { total_tokens: 5 } });
+      return reply({ choices: [{ message: { content: '{"title":"Dev","keywords":[{"term":"React","required":true}]}' } }], usage: { total_tokens: 50 } });
+    };
+    try {
+      const a = await llm.jobKeywords('Dev\nReact');
+      assert.equal(a.job.keywords[0].term, 'React');
+      assert.deepEqual(calls, ['busy:1800', 'empty:1800', 'good:1800']);
+      calls.length = 0;
+      await llm.jobKeywords('Dev\nReact');
+      assert.deepEqual(calls, ['empty:1800', 'good:1800'], 'the busy model is skipped while cooling down');
+    } finally { global.fetch = realFetch; Object.assign(cfg.llm, saved); }
+    console.log('  ok  busy models (429) cool down for 10 min, empty replies fall through, reply cap set per task');
+  }
   const db = require('../src/db');
   const { createApp } = require('../src/app');
   const { closeBrowser } = require('../src/pdf');

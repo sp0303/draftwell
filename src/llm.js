@@ -12,7 +12,14 @@ const { THEME_IDS } = require('./schema');
 const ailog = require('./ailog');
 
 const TOTAL_BUDGET_MS = 90000;
-const MAX_REPLY_TOKENS = 6000;
+// Reply length cap per task. A model that loops or rambles hits the cap and fails
+// fast instead of burning the time budget (seen in production: 6,600 tokens of
+// non-JSON for a keyword list).
+const MAX_REPLY_TOKENS = { upload: 5000, chat: 5000, 'job keywords': 1800, spelling: 2500 };
+// A model that answers "429, busy" is skipped for this long, so busy models stop
+// costing a try (and one of OpenRouter's daily free requests) on every call.
+const BUSY_COOL_DOWN_MS = 10 * 60 * 1000;
+const busyUntil = new Map(); // "provider|model" -> timestamp
 const SECTIONS = ['name', 'contact', 'summary', 'experience', 'education', 'skills', 'projects', 'certifications'];
 
 const PROVIDERS = {
@@ -21,7 +28,7 @@ const PROVIDERS = {
     key: () => (config.llm.provider === 'openrouter' ? config.llm.apiKey : ''),
     models: () => [config.llm.model, ...config.llm.fallbackModels],
     headers: () => ({ 'HTTP-Referer': config.appUrl, 'X-Title': 'Resumely' }),
-    timeoutMs: 35000,
+    timeoutMs: 30000,
   },
   nvidia: {
     endpoint: 'https://integrate.api.nvidia.com/v1/chat/completions',
@@ -53,12 +60,12 @@ function parseJson(text) {
   return null;
 }
 
-async function callOnce({ p, model }, messages, signal) {
+async function callOnce({ p, model }, messages, signal, maxTokens = 5000) {
   const res = await fetch(p.endpoint, {
     method: 'POST',
     signal,
     headers: { Authorization: `Bearer ${p.key()}`, 'Content-Type': 'application/json', ...p.headers() },
-    body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: MAX_REPLY_TOKENS, response_format: { type: 'json_object' } }),
+    body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: maxTokens, response_format: { type: 'json_object' } }),
   });
   const body = await res.json().catch(() => ({}));
   const msg = (body.choices && body.choices[0] && body.choices[0].message) || {};
@@ -69,9 +76,14 @@ async function callOnce({ p, model }, messages, signal) {
   const tokens = Number(u.total_tokens) || (Number(u.prompt_tokens) || 0) + (Number(u.completion_tokens) || 0)
     || (res.ok ? Math.ceil((JSON.stringify(messages).length + String(content).length) / 4) : 0);
   const err = body.error && (body.error.message || body.error) || body.detail || body.title;
-  if (!res.ok || body.error) throw Object.assign(new Error(`${model}: ${res.status} ${String(err || 'request failed').slice(0, 200)}`), { tokens });
+  if (!res.ok || body.error) {
+    const code = Number(body.error && body.error.code) || res.status;
+    throw Object.assign(new Error(`${model}: ${code} ${String(err || 'request failed').slice(0, 200)}`), { tokens, busy: code === 429 });
+  }
+  if (!String(content).trim()) throw Object.assign(new Error(`${model}: empty reply`), { tokens });
   const json = parseJson(content);
-  if (!json || typeof json !== 'object') throw Object.assign(new Error(`${model}: reply was not JSON`), { tokens });
+  const finish = body.choices && body.choices[0] && body.choices[0].finish_reason;
+  if (!json || typeof json !== 'object') throw Object.assign(new Error(`${model}: reply was not JSON${finish === 'length' ? ' (hit the length cap)' : ''}`), { tokens });
   return { json, tokens };
 }
 
@@ -82,7 +94,12 @@ async function callJson(task, messages, accept = () => true) {
   const started = Date.now();
   const errors = [];
   let tokens = 0;
-  for (const a of attempts()) {
+  // Models cooling down after a 429 go last rather than first (still tried if all else fails).
+  const all = attempts();
+  const now = Date.now();
+  const ready = all.filter((a) => !(busyUntil.get(`${a.name}|${a.model}`) > now));
+  const order = ready.concat(all.filter((a) => !ready.includes(a)));
+  for (const a of order) {
     const { model } = a;
     const left = TOTAL_BUDGET_MS - (Date.now() - started);
     if (left < 5000) break;
@@ -91,7 +108,8 @@ async function callJson(task, messages, accept = () => true) {
     const t0 = Date.now();
     let spent = 0;
     try {
-      const out = await callOnce(a, messages, ctrl.signal);
+      const out = await callOnce(a, messages, ctrl.signal, MAX_REPLY_TOKENS[task] || 5000);
+      busyUntil.delete(`${a.name}|${model}`);
       spent = out.tokens;
       tokens += out.tokens;
       if (!accept(out.json)) throw new Error(`${model}: reply was missing required fields`);
@@ -99,6 +117,7 @@ async function callJson(task, messages, accept = () => true) {
       return { json: out.json, model: `${a.name}:${model}`, tokens };
     } catch (e) {
       if (!spent) { spent = e.tokens || 0; tokens += spent; }
+      if (e.busy) busyUntil.set(`${a.name}|${model}`, Date.now() + BUSY_COOL_DOWN_MS);
       const why = e.name === 'AbortError' ? `${model}: timed out` : e.message;
       errors.push(why);
       ailog.record({ task, provider: a.name, model, ok: false, ms: Date.now() - t0, tokens: spent, error: why.replace(`${model}: `, '') });

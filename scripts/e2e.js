@@ -41,8 +41,24 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
       calls.length = 0;
       await llm.jobKeywords('Dev\nReact');
       assert.deepEqual(calls, ['empty:1800', 'good:1800'], 'the busy model is skipped while cooling down');
+      // LLM_ORDER mixes providers; entries for a provider without a key are skipped.
+      calls.length = 0;
+      const nvSaved = { ...cfg.nvidia };
+      Object.assign(cfg.nvidia, { apiKey: 'nv-test', models: ['nv-model'] });
+      cfg.llm.order = ['openrouter:empty', 'nvidia:nv-busy', 'openrouter:good', 'nowhere:x', 'nvidia:nv-model'];
+      global.fetch = async (url, opt) => {
+        const b = JSON.parse(opt.body);
+        calls.push(`${url.includes('nvidia') ? 'nv' : 'or'}:${b.model}`);
+        const reply = (o, status = 200) => ({ ok: status === 200, status, json: async () => o });
+        if (b.model === 'empty') return reply({ choices: [{ message: { content: '' } }] });
+        if (b.model === 'nv-busy') return reply({ status: 503, detail: 'temporarily unavailable' }, 503);
+        return reply({ choices: [{ message: { content: '{"title":"Dev","keywords":[{"term":"React","required":true}]}' } }] });
+      };
+      await llm.jobKeywords('Dev\nReact');
+      assert.deepEqual(calls, ['or:empty', 'nv:nv-busy', 'or:good'], 'LLM_ORDER is followed across providers');
+      Object.assign(cfg.nvidia, nvSaved);
     } finally { global.fetch = realFetch; Object.assign(cfg.llm, saved); }
-    console.log('  ok  busy models (429) cool down for 10 min, empty replies fall through, reply cap set per task');
+    console.log('  ok  busy models (429) cool down for 10 min, empty replies fall through, reply cap per task, LLM_ORDER mixes providers');
   }
   const db = require('../src/db');
   const { createApp } = require('../src/app');

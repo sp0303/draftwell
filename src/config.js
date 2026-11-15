@@ -28,6 +28,9 @@ module.exports = {
     model: process.env.LLM_MODEL || '',
     // Tried in order when the main model is busy or fails.
     fallbackModels: (process.env.LLM_FALLBACK_MODELS || '').split(',').map((s) => s.trim()).filter(Boolean),
+    // Optional: one order across providers, e.g. "openrouter:baidu/ernie-5.5-flash-preview:free,nvidia:minimaxai/minimax-m3.1-flash".
+    // Entries whose provider has no API key are skipped. Empty = OpenRouter models first, then NVIDIA.
+    order: (process.env.LLM_ORDER || '').split(',').map((s) => s.trim()).filter((s) => /^(openrouter|nvidia):./.test(s)),
   },
   // Second provider, tried after OpenRouter: NVIDIA API catalog (build.nvidia.com).
   nvidia: {

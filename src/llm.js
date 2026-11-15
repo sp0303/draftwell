@@ -40,12 +40,19 @@ const PROVIDERS = {
   },
 };
 
-// Every (provider, model) pair to try, in order.
+// Every (provider, model) pair to try, in order. LLM_ORDER ("provider:model,...")
+// sets one order across providers; without it, each provider's models go in turn.
 function attempts() {
   const seen = new Set();
-  return Object.entries(PROVIDERS).flatMap(([name, p]) => (p.key() ? p.models() : [])
-    .filter((m) => m && !seen.has(`${name}|${m}`) && seen.add(`${name}|${m}`))
-    .map((model) => ({ name, p, model })));
+  const keep = (a) => a.p && a.p.key() && a.model && !seen.has(`${a.name}|${a.model}`) && seen.add(`${a.name}|${a.model}`);
+  if (config.llm.order.length) {
+    return config.llm.order.map((entry) => {
+      const i = entry.indexOf(':'); // model ids can contain ':' too ("...:free"), so split on the first only
+      const name = entry.slice(0, i);
+      return { name, p: PROVIDERS[name], model: entry.slice(i + 1) };
+    }).filter(keep);
+  }
+  return Object.entries(PROVIDERS).flatMap(([name, p]) => p.models().map((model) => ({ name, p, model }))).filter(keep);
 }
 
 const isConfigured = () => attempts().length > 0;

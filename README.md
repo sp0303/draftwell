@@ -40,6 +40,8 @@ The AI runs through OpenRouter (`src/llm.js`). Set `LLM_API_KEY`, `LLM_MODEL` an
 
 With `NVIDIA_API_KEY` set, the NVIDIA API catalog is a second provider: its `NVIDIA_MODELS` are tried after every OpenRouter model has failed (busy, rate-limited or out of free requests). If all of them fail too, the built-in rules take over.
 
+`LLM_ORDER` sets one order across both providers, e.g. `openrouter:baidu/ernie-5.5-flash-preview:free,nvidia:minimaxai/minimax-m3.1-flash,...`. A model that answers 429 (busy) is skipped for 10 minutes, and each task has its own reply-length cap.
+
 ## Tailoring to a job
 
 Each resume can hold a target job description (`jd`), saved from the "Target job" box above the chat or by pasting a job posting straight into the chat. When it is set, chat edits aim at that job: relevant work first, the job's keywords where the resume supports them, and a list of requirements the resume doesn't cover. Nothing is invented.

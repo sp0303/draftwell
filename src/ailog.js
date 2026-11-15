@@ -21,7 +21,7 @@ function record(entry) {
   try { db = col('ai_calls'); } catch (e) { return; } // not connected (scripts)
   db.insertOne({
     at: now, day: today(), userId: store.userId || null,
-    task: entry.task, provider: entry.provider, model: entry.model,
+    task: entry.task, provider: entry.provider, model: entry.model, key: entry.key || null,
     ok: Boolean(entry.ok), ms: Math.round(entry.ms || 0), tokens: Math.round(entry.tokens || 0),
     error: entry.ok ? null : String(entry.error || '').slice(0, 200),
   }).catch((e) => console.error('AI log write failed:', e.message));

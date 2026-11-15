@@ -488,3 +488,4 @@ p{margin:0}
 .subbar .ats-pill{padding:3px 10px 3px 4px;font-size:12.5px}
 .subbar .ats-pill b{font-size:12px}
 .subbar .hl-toggle{font-size:12.5px}
+.admin-table .keyno{font-size:11.5px;color:var(--muted);background:var(--surface-2);border-radius:999px;padding:1px 7px;margin-left:4px}

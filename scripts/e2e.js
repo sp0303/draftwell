@@ -11,6 +11,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
   process.env.UPLOAD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'resumely-e2e-'));
   process.env.LLM_API_KEY = ''; // keep the tests on the built-in rules, never a live model
   process.env.NVIDIA_API_KEY = '';
+  process.env.LLM_ORDER = '';
   process.env.ADMIN_EMAILS = 'boss@example.com';
   process.env.AI_STARTING_CREDITS = '100';
   const { parseJson } = require('../src/llm');
@@ -44,7 +45,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
       // LLM_ORDER mixes providers; entries for a provider without a key are skipped.
       calls.length = 0;
       const nvSaved = { ...cfg.nvidia };
-      Object.assign(cfg.nvidia, { apiKey: 'nv-test', models: ['nv-model'] });
+      Object.assign(cfg.nvidia, { apiKeys: ['nv-test'], models: ['nv-model'] });
       cfg.llm.order = ['openrouter:empty', 'nvidia:nv-busy', 'openrouter:good', 'nowhere:x', 'nvidia:nv-model'];
       global.fetch = async (url, opt) => {
         const b = JSON.parse(opt.body);
@@ -56,9 +57,26 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
       };
       await llm.jobKeywords('Dev\nReact');
       assert.deepEqual(calls, ['or:empty', 'nv:nv-busy', 'or:good'], 'LLM_ORDER is followed across providers');
+
+      // Two NVIDIA keys: key A is rate-limited, so the same model is retried at once on key B,
+      // and the next request starts with key B while A sits out.
+      Object.assign(cfg.nvidia, { apiKeys: ['key-A', 'key-B'] });
+      cfg.llm.order = ['nvidia:nv-model'];
+      calls.length = 0;
+      global.fetch = async (url, opt) => {
+        const b = JSON.parse(opt.body);
+        const key = opt.headers.Authorization.replace('Bearer ', '');
+        calls.push(`${b.model}@${key}`);
+        const reply = (o, status = 200) => ({ ok: status === 200, status, json: async () => o });
+        if (key === 'key-A') return reply({ status: 429, title: 'Too Many Requests' }, 429);
+        return reply({ choices: [{ message: { content: '{"title":"Dev","keywords":[{"term":"React","required":true}]}' } }] });
+      };
+      await llm.jobKeywords('Dev\nReact');
+      await llm.jobKeywords('Dev\nReact');
+      assert.deepEqual(calls, ['nv-model@key-A', 'nv-model@key-B', 'nv-model@key-B'], 'a rate-limited key sits out; the other key takes over');
       Object.assign(cfg.nvidia, nvSaved);
     } finally { global.fetch = realFetch; Object.assign(cfg.llm, saved); }
-    console.log('  ok  busy models (429) cool down for 10 min, empty replies fall through, reply cap per task, LLM_ORDER mixes providers');
+    console.log('  ok  busy models cool down, empty replies fall through, reply cap per task, LLM_ORDER mixes providers, a rate-limited key hands over to the other key');
   }
   const db = require('../src/db');
   const { createApp } = require('../src/app');

@@ -85,7 +85,7 @@ function router() {
       models,
       tasks: byTask.map((t) => ({ task: t._id, calls: t.calls, ok: t.ok })),
       days: days.map((d) => ({ day: d._id, calls: d.calls, ok: d.ok })),
-      recent: recent.map((c) => ({ at: c.at, task: c.task, provider: c.provider, model: c.model, ok: c.ok, ms: c.ms, tokens: c.tokens, error: c.error, email: emailOf.get(String(c.userId)) || '' })),
+      recent: recent.map((c) => ({ at: c.at, task: c.task, provider: c.provider, key: c.key || null, model: c.model, ok: c.ok, ms: c.ms, tokens: c.tokens, error: c.error, email: emailOf.get(String(c.userId)) || '' })),
     });
   }));
 

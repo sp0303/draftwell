@@ -650,7 +650,7 @@
     $('#ai-days').innerHTML = a.days.length ? a.days.map((d) => `<div class="ai-dayrow"><span>${esc(d.day.slice(5))}</span><div class="ai-bar"><i style="width:${(d.calls / max) * 100}%"></i></div><b>${fmtN(d.calls)}</b></div>`).join('') : '<span class="empty">No requests yet</span>';
     $('#ai-recent').innerHTML = a.recent.length ? a.recent.map((c) => `<tr>
       <td title="${esc(new Date(c.at).toLocaleString())}">${when(c.at)}</td><td>${esc(c.email || '—')}</td><td>${esc(c.task)}</td>
-      <td>${esc(PROVIDER[c.provider] || c.provider)}</td><td class="mono">${esc(c.model)}</td>
+      <td>${esc(PROVIDER[c.provider] || c.provider)}${c.key ? ` <span class="keyno">key ${esc(c.key)}</span>` : ''}</td><td class="mono">${esc(c.model)}</td>
       <td>${c.ok ? '<span class="res ok">Answered</span>' : `<span class="res bad" title="${esc(c.error || '')}">${esc(shortErr(c.error))}</span>`}</td>
       <td class="num">${secs(c.ms)}</td><td class="num">${fmtN(c.tokens)}</td></tr>`).join('')
       : '<tr><td colspan="8" class="empty">No AI requests yet.</td></tr>';

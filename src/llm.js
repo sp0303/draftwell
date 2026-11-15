@@ -20,19 +20,34 @@ const MAX_REPLY_TOKENS = { upload: 5000, chat: 5000, 'job keywords': 1800, spell
 // costing a try (and one of OpenRouter's daily free requests) on every call.
 const BUSY_COOL_DOWN_MS = 10 * 60 * 1000;
 const busyUntil = new Map(); // "provider|model" -> timestamp
+// With several keys for one provider: requests take turns, and a key that is
+// rate-limited (429) or rejected (401/403) sits out while the other keys carry on.
+const KEY_DENIED_MS = 60 * 60 * 1000;
+const keyUntil = new Map(); // "provider|keyNo" -> timestamp
+const keyTurn = new Map(); // provider -> next key to start with
+function keyOrder(provider, keys) {
+  const list = keys.map((key, i) => ({ key, no: i + 1 }));
+  if (list.length < 2) return list;
+  const start = (keyTurn.get(provider) || 0) % list.length;
+  keyTurn.set(provider, start + 1);
+  const turned = list.slice(start).concat(list.slice(0, start));
+  const now = Date.now();
+  const ready = turned.filter((x) => !(keyUntil.get(`${provider}|${x.no}`) > now));
+  return ready.length ? ready.concat(turned.filter((x) => !ready.includes(x))) : turned;
+}
 const SECTIONS = ['name', 'contact', 'summary', 'experience', 'education', 'skills', 'projects', 'certifications'];
 
 const PROVIDERS = {
   openrouter: {
     endpoint: 'https://openrouter.ai/api/v1/chat/completions',
-    key: () => (config.llm.provider === 'openrouter' ? config.llm.apiKey : ''),
+    keys: () => (config.llm.provider === 'openrouter' && config.llm.apiKey ? [config.llm.apiKey] : []),
     models: () => [config.llm.model, ...config.llm.fallbackModels],
     headers: () => ({ 'HTTP-Referer': config.appUrl, 'X-Title': 'Resumely' }),
     timeoutMs: 30000,
   },
   nvidia: {
     endpoint: 'https://integrate.api.nvidia.com/v1/chat/completions',
-    key: () => config.nvidia.apiKey,
+    keys: () => config.nvidia.apiKeys, // one or more (NVIDIA_API_KEY, comma separated)
     models: () => config.nvidia.models,
     headers: () => ({}),
     // NVIDIA's free endpoints are often queued; give up sooner and move on.
@@ -44,7 +59,7 @@ const PROVIDERS = {
 // sets one order across providers; without it, each provider's models go in turn.
 function attempts() {
   const seen = new Set();
-  const keep = (a) => a.p && a.p.key() && a.model && !seen.has(`${a.name}|${a.model}`) && seen.add(`${a.name}|${a.model}`);
+  const keep = (a) => a.p && a.p.keys().length && a.model && !seen.has(`${a.name}|${a.model}`) && seen.add(`${a.name}|${a.model}`);
   if (config.llm.order.length) {
     return config.llm.order.map((entry) => {
       const i = entry.indexOf(':'); // model ids can contain ':' too ("...:free"), so split on the first only
@@ -67,11 +82,11 @@ function parseJson(text) {
   return null;
 }
 
-async function callOnce({ p, model }, messages, signal, maxTokens = 5000) {
+async function callOnce({ p, model }, messages, signal, maxTokens, key) {
   const res = await fetch(p.endpoint, {
     method: 'POST',
     signal,
-    headers: { Authorization: `Bearer ${p.key()}`, 'Content-Type': 'application/json', ...p.headers() },
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', ...p.headers() },
     body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: maxTokens, response_format: { type: 'json_object' } }),
   });
   const body = await res.json().catch(() => ({}));
@@ -85,7 +100,7 @@ async function callOnce({ p, model }, messages, signal, maxTokens = 5000) {
   const err = body.error && (body.error.message || body.error) || body.detail || body.title;
   if (!res.ok || body.error) {
     const code = Number(body.error && body.error.code) || res.status;
-    throw Object.assign(new Error(`${model}: ${code} ${String(err || 'request failed').slice(0, 200)}`), { tokens, busy: code === 429 });
+    throw Object.assign(new Error(`${model}: ${code} ${String(err || 'request failed').slice(0, 200)}`), { tokens, busy: code === 429, denied: code === 401 || code === 403 });
   }
   if (!String(content).trim()) throw Object.assign(new Error(`${model}: empty reply`), { tokens });
   const json = parseJson(content);
@@ -108,28 +123,41 @@ async function callJson(task, messages, accept = () => true) {
   const order = ready.concat(all.filter((a) => !ready.includes(a)));
   for (const a of order) {
     const { model } = a;
-    const left = TOTAL_BUDGET_MS - (Date.now() - started);
-    if (left < 5000) break;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), Math.min(a.p.timeoutMs, left));
-    const t0 = Date.now();
-    let spent = 0;
-    try {
-      const out = await callOnce(a, messages, ctrl.signal, MAX_REPLY_TOKENS[task] || 5000);
-      busyUntil.delete(`${a.name}|${model}`);
-      spent = out.tokens;
-      tokens += out.tokens;
-      if (!accept(out.json)) throw new Error(`${model}: reply was missing required fields`);
-      ailog.record({ task, provider: a.name, model, ok: true, ms: Date.now() - t0, tokens: spent });
-      return { json: out.json, model: `${a.name}:${model}`, tokens };
-    } catch (e) {
-      if (!spent) { spent = e.tokens || 0; tokens += spent; }
-      if (e.busy) busyUntil.set(`${a.name}|${model}`, Date.now() + BUSY_COOL_DOWN_MS);
-      const why = e.name === 'AbortError' ? `${model}: timed out` : e.message;
-      errors.push(why);
-      ailog.record({ task, provider: a.name, model, ok: false, ms: Date.now() - t0, tokens: spent, error: why.replace(`${model}: `, '') });
-    } finally {
-      clearTimeout(timer);
+    const keys = keyOrder(a.name, a.p.keys());
+    // With several keys, a key that is rate-limited or rejected sits out and the
+    // same model is retried at once on the next key.
+    for (let k = 0; k < keys.length; k++) {
+      const { key, no } = keys[k];
+      const left = TOTAL_BUDGET_MS - (Date.now() - started);
+      if (left < 5000) break;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), Math.min(a.p.timeoutMs, left));
+      const t0 = Date.now();
+      let spent = 0;
+      const keyNo = a.p.keys().length > 1 ? no : undefined;
+      try {
+        const out = await callOnce(a, messages, ctrl.signal, MAX_REPLY_TOKENS[task] || 5000, key);
+        busyUntil.delete(`${a.name}|${model}`);
+        spent = out.tokens;
+        tokens += out.tokens;
+        if (!accept(out.json)) throw new Error(`${model}: reply was missing required fields`);
+        ailog.record({ task, provider: a.name, model, key: keyNo, ok: true, ms: Date.now() - t0, tokens: spent });
+        return { json: out.json, model: `${a.name}:${model}${keyNo ? ` (key ${keyNo})` : ''}`, tokens };
+      } catch (e) {
+        if (!spent) { spent = e.tokens || 0; tokens += spent; }
+        const why = e.name === 'AbortError' ? `${model}: timed out` : e.message;
+        errors.push(keyNo ? `${why} [key ${keyNo}]` : why);
+        ailog.record({ task, provider: a.name, model, key: keyNo, ok: false, ms: Date.now() - t0, tokens: spent, error: why.replace(`${model}: `, '') });
+        const keyProblem = e.busy || e.denied;
+        if (keyProblem && keys.length > 1) {
+          keyUntil.set(`${a.name}|${no}`, Date.now() + (e.denied ? KEY_DENIED_MS : BUSY_COOL_DOWN_MS));
+          continue; // same model, next key
+        }
+        if (e.busy) busyUntil.set(`${a.name}|${model}`, Date.now() + BUSY_COOL_DOWN_MS);
+        break; // a model problem: move on to the next model
+      } finally {
+        clearTimeout(timer);
+      }
     }
   }
   throw Object.assign(new Error(`All models failed. ${errors.join(' | ')}`), { tokens });

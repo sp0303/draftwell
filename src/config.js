@@ -34,7 +34,8 @@ module.exports = {
   },
   // Second provider, tried after OpenRouter: NVIDIA API catalog (build.nvidia.com).
   nvidia: {
-    apiKey: process.env.NVIDIA_API_KEY || '',
+    // One key, or several separated by commas (requests take turns between them).
+    apiKeys: (process.env.NVIDIA_API_KEY || '').split(',').map((s) => s.trim()).filter(Boolean),
     models: (process.env.NVIDIA_MODELS || 'minimaxai/minimax-m3.1-flash,nvidia/nemotron-3.5-lightning-30b-a3b').split(',').map((s) => s.trim()).filter(Boolean),
   },
 };

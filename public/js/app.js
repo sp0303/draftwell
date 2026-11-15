@@ -540,19 +540,74 @@
     const box = $('#account');
     const me = state.me;
     if (me.signedIn) {
-      const face = me.picture
-        ? `<img src="${esc(me.picture)}" alt="" referrerpolicy="no-referrer">`
-        : `<b class="initial">${esc((me.name || me.email || '?')[0].toUpperCase())}</b>`;
+      const face = (cls) => (me.picture
+        ? `<img class="${cls}" src="${esc(me.picture)}" alt="" referrerpolicy="no-referrer">`
+        : `<b class="${cls} initial">${esc((me.name || me.email || '?')[0].toUpperCase())}</b>`);
       const ai = state.llm && state.ai;
-      box.innerHTML = `${me.isAdmin ? '<a class="admin-link" href="#admin">Admin</a>' : ''}
-        ${ai ? `<span class="credits${ai.credits > 0 ? '' : ' empty'}" title="AI credits left. 1 credit = ${fmtN(ai.tokensPerCredit)} AI tokens.">${fmtN(ai.credits)} credits</span>` : ''}
-        <div class="who" title="${esc(me.email)}">${face}<span>${esc(me.name || me.email)}</span></div>
-        <button class="btn out" id="sign-out">Sign out</button>`;
-      $('#sign-out').addEventListener('click', signOut);
+      const name = me.name || me.email;
+      const icon = (d) => `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+      box.innerHTML = `<div class="pmenu">
+        <button class="pbtn" id="pbtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="pmenu" aria-label="Account menu for ${esc(name)}">
+          ${face('pface')}<span class="pname">${esc(name)}</span>
+          <svg class="pchev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="pdrop" id="pmenu" role="menu" aria-labelledby="pbtn" hidden>
+          <div class="phead">${face('pface big')}<div><b>${esc(name)}</b><span>${esc(me.email)}</span></div></div>
+          ${ai ? `<div class="pcredits${ai.credits > 0 ? '' : ' empty'}"><span><b>${fmtN(ai.credits)}</b> AI credits left</span><small>1 credit = ${fmtN(ai.tokensPerCredit)} AI tokens</small></div>` : ''}
+          <div class="psep" role="separator"></div>
+          ${me.isAdmin ? `<a class="pitem" role="menuitem" href="#admin" tabindex="-1">${icon('<path d="M12 3l8 4v5c0 4.4-3.4 8.3-8 9-4.6-.7-8-4.6-8-9V7z"/>')}Admin</a>` : ''}
+          <a class="pitem" role="menuitem" href="#upload" tabindex="-1">${icon('<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 17h4"/>')}Your resumes</a>
+          <a class="pitem" role="menuitem" href="/privacy" tabindex="-1">${icon('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>')}Privacy policy</a>
+          <button class="pitem pdanger" role="menuitem" type="button" id="pdelete" tabindex="-1">${icon('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>')}Delete my account</button>
+          <div class="psep" role="separator"></div>
+          <button class="pitem" role="menuitem" type="button" id="sign-out" tabindex="-1">${icon('<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>')}Sign out</button>
+        </div>
+      </div>`;
+      $('#sign-out').addEventListener('click', () => { closeMenu(); signOut(); });
+      $('#pdelete').addEventListener('click', () => {
+        closeMenu();
+        location.hash = 'upload';
+        setTimeout(() => { const d = $('#delete-account'); d.open = true; d.scrollIntoView({ block: 'center', behavior: 'smooth' }); $('#del-confirm').focus({ preventScroll: true }); }, 50);
+      });
+      box.querySelectorAll('a.pitem').forEach((a) => a.addEventListener('click', () => closeMenu()));
+      $('#pbtn').addEventListener('click', () => (menuIsOpen() ? closeMenu(true) : openMenu()));
+      if (menuWasOpen) openMenu(false);
       return;
     }
+    menuWasOpen = false;
     box.innerHTML = '';
   }
+
+  /* profile dropdown: opens on click, closes on Escape, outside click or picking an item */
+  let menuWasOpen = false;
+  const menuIsOpen = () => { const m = $('#pmenu'); return Boolean(m && !m.hidden); };
+  const menuItems = () => [...document.querySelectorAll('#pmenu .pitem')];
+  function openMenu(focusFirst = true) {
+    const m = $('#pmenu'); if (!m) return;
+    m.hidden = false; $('#pbtn').setAttribute('aria-expanded', 'true'); menuWasOpen = true;
+    if (focusFirst) menuItems()[0]?.focus();
+  }
+  function closeMenu(refocus = false) {
+    const m = $('#pmenu'); if (!m || m.hidden) return;
+    m.hidden = true; $('#pbtn').setAttribute('aria-expanded', 'false'); menuWasOpen = false;
+    if (refocus) $('#pbtn').focus();
+  }
+  document.addEventListener('click', (e) => { if (menuIsOpen() && !e.target.closest('.pmenu')) closeMenu(); });
+  document.addEventListener('keydown', (e) => {
+    if (!menuIsOpen()) {
+      // Enter and Space open it through the button's click; ArrowDown opens it too.
+      if (e.key === 'ArrowDown' && document.activeElement && document.activeElement.id === 'pbtn') { e.preventDefault(); openMenu(); }
+      return;
+    }
+    const items = menuItems();
+    const i = items.indexOf(document.activeElement);
+    if (e.key === 'Escape') { e.preventDefault(); closeMenu(true); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
+    else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
+    else if (e.key === 'Tab') closeMenu();
+  });
   function renderGoogleButton(el, size) {
     if (!el || !state.googleClientId) return;
     loadGoogle().then((g) => {

@@ -522,3 +522,18 @@ p{margin:0}
 .faq details p{color:var(--muted);font-size:15.5px;line-height:1.65;padding:0 40px 18px 0;max-width:62em}
 .faq summary:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:4px}
 @media (max-width:560px){.faq{margin-top:48px}.faq summary h3{font-size:17px}.faq details p{padding-right:0}}
+
+/* delete my account */
+.danger{margin-top:40px;border-top:1px solid var(--line);padding-top:16px}
+.danger summary{cursor:pointer;font-size:13.5px;color:var(--muted);width:max-content}
+.danger summary:hover{color:var(--danger)}
+.danger-body{margin-top:12px;display:grid;gap:10px;background:color-mix(in srgb,var(--danger) 6%,var(--surface));border:1px solid color-mix(in srgb,var(--danger) 25%,var(--line));border-radius:12px;padding:16px}
+.danger-body p{font-size:14px}
+.danger-body label{font-size:13.5px;font-weight:500}
+.danger-row{display:flex;gap:10px;flex-wrap:wrap}
+.danger-row input{flex:1 1 180px;min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:inherit;font:inherit;padding:8px 12px;letter-spacing:.08em}
+.danger-btn{background:var(--danger);border-color:var(--danger);color:#fff}
+.danger-btn:disabled{background:var(--surface-2);border-color:var(--line);color:var(--muted)}
+.foot a{color:inherit;text-underline-offset:3px}
+.foot .links{display:flex;gap:14px}
+.danger-body a{color:var(--accent);text-underline-offset:3px}

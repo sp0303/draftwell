@@ -492,6 +492,29 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
     r = await call('GET', '/api/me');
     assert.equal(r.json.ai.credits, 500); ok('the user sees the new balance');
 
+    // ---- privacy policy and deleting an account ----
+    s = await fetch(`${base}/privacy`);
+    assert.equal(s.status, 200);
+    const priv = await s.text();
+    assert.match(priv, /<h1>Privacy policy<\/h1>/); assert.match(priv, /patnayakunisharat@gmail\.com/); assert.match(priv, /OpenRouter/);
+    assert.match(await (await fetch(`${base}/sitemap.xml`)).text(), /\/privacy<\/loc>/);
+    assert.match(html, /href="\/privacy"/);
+    ok('privacy policy page is served, linked from the footer and listed in the sitemap');
+    const anaUser = await col('users').findOne({ 'google.sub': '111' });
+    r = await call('DELETE', '/api/me', { confirm: 'yes' });
+    assert.equal(r.status, 400);
+    assert.ok(await col('users').findOne({ _id: anaUser._id }), 'nothing deleted without typing DELETE');
+    r = await call('DELETE', '/api/me', { confirm: 'DELETE' });
+    assert.equal(r.status, 200);
+    assert.equal(await col('users').countDocuments({ _id: anaUser._id }), 0);
+    assert.equal(await col('resumes').countDocuments({ userId: anaUser._id }), 0);
+    assert.equal(await col('sessions').countDocuments({ userId: anaUser._id }), 0);
+    assert.equal(await col('ai_calls').countDocuments({ userId: anaUser._id }), 0);
+    assert.equal(fs.existsSync(path.join(process.env.UPLOAD_DIR, String(anaUser._id))), false);
+    r = await call('GET', '/api/resumes');
+    assert.equal(r.status, 401);
+    ok('delete my account removes the account, resumes, uploaded files and sessions (needs "DELETE")');
+
     console.log('\nAll checks passed.');
   } catch (e) {
     console.error('\nFAILED:', e.message);

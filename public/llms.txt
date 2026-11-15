@@ -17,4 +17,5 @@ Resumely AI is a free personal project by Sharat Patnayakuni (Sarey). Sign-in is
 ## Links
 
 - [Resumely AI home](https://resume.sarey.tech/): what it is, how it works, and the FAQ
+- [Privacy policy](https://resume.sarey.tech/privacy): what is stored, which AI providers see it, and how to delete it
 - [Sitemap](https://resume.sarey.tech/sitemap.xml)

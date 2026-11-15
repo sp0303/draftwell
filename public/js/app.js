@@ -973,6 +973,22 @@
   $('#hl').addEventListener('change', () => { try { localStorage.setItem('resumely.hl', $('#hl').checked ? '1' : '0'); } catch (e) {} highlightKeywords(); });
   try { $('#hl').checked = localStorage.getItem('resumely.hl') !== '0'; } catch (e) { $('#hl').checked = true; }
 
+  /* delete my account */
+  const delInput = $('#del-confirm');
+  delInput.addEventListener('input', () => { $('#del-go').disabled = delInput.value.trim() !== 'DELETE'; });
+  $('#del-go').addEventListener('click', async () => {
+    const b = $('#del-go');
+    b.disabled = true; b.textContent = 'Deleting…';
+    try {
+      await api('DELETE', '/api/me', { confirm: delInput.value.trim() });
+      remember(null);
+      delInput.value = ''; $('#delete-account').open = false;
+      signedOut();
+      toast('Your account and all your resumes have been deleted.');
+    } catch (e) { toast(e.message); b.disabled = false; }
+    b.textContent = 'Delete everything';
+  });
+
   /* toast */
   let tt;
   function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(tt); tt = setTimeout(() => { el.hidden = true; }, 3200); }

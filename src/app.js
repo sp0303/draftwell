@@ -168,17 +168,20 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
     next();
   });
   app.get('/favicon.ico', (req, res) => res.type('png').sendFile(path.join(PUBLIC_DIR, 'favicon-32.png')));
-  // Sitemap with lastmod = when the landing page last changed (updates itself on deploy).
-  const lastmod = fs.statSync(path.join(PUBLIC_DIR, 'index.html')).mtime.toISOString().slice(0, 10);
+  app.get('/privacy', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'privacy.html')));
+  // Sitemap with lastmod = when each page last changed (updates itself on deploy).
+  const modified = (file) => fs.statSync(path.join(PUBLIC_DIR, file)).mtime.toISOString().slice(0, 10);
+  const PAGES = [['/', 'index.html', 'weekly', '1.0'], ['/privacy', 'privacy.html', 'yearly', '0.3']].map(([loc, file, freq, pri]) => ({ loc, lastmod: modified(file), freq, pri }));
   app.get('/sitemap.xml', (req, res) => {
+    const site = config.appUrl.replace(/\/$/, '');
     res.set('Cache-Control', 'public, max-age=3600').type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>${config.appUrl.replace(/\/$/, '')}/</loc>
-    <lastmod>${lastmod}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>1.0</priority>
-  </url>
+${PAGES.map((p) => `  <url>
+    <loc>${site}${p.loc}</loc>
+    <lastmod>${p.lastmod}</lastmod>
+    <changefreq>${p.freq}</changefreq>
+    <priority>${p.pri}</priority>
+  </url>`).join('\n')}
 </urlset>
 `);
   });
@@ -211,6 +214,23 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
   api.post('/auth/logout', wrap(async (req, res) => {
     await auth.signOut(req, res);
     res.json({ ok: true });
+  }));
+
+  // Delete my account: the account, every resume, every uploaded file and every session.
+  // AI request log entries lose the link to the account (they expire within 30 days anyway).
+  api.delete('/me', auth.requireUser, wrap(async (req, res) => {
+    if ((req.body && req.body.confirm) !== 'DELETE') throw httpError(400, 'Type DELETE to confirm.');
+    const uid = req.user._id;
+    await fsp.rm(path.join(config.uploadDir, String(uid)), { recursive: true, force: true });
+    const [resumes] = await Promise.all([
+      col('resumes').deleteMany({ userId: uid }),
+      col('sessions').deleteMany({ userId: uid }),
+      col('ai_calls').updateMany({ userId: uid }, { $set: { userId: null } }),
+    ]);
+    await col('users').deleteOne({ _id: uid });
+    console.log(`Account deleted (${resumes.deletedCount} resumes)`);
+    res.clearCookie('rl_sid', { path: '/' });
+    res.json({ ok: true, resumesDeleted: resumes.deletedCount });
   }));
 
   // Everything below needs a signed-in user.

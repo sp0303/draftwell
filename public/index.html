@@ -328,6 +328,18 @@
           <h2>Your resumes</h2>
           <ul id="recent-list"></ul>
         </div>
+        <details class="danger" id="delete-account">
+          <summary>Delete my account</summary>
+          <div class="danger-body">
+            <p>This permanently deletes your Resumely AI account, every resume, every uploaded file and your chat history. It can't be undone. Download any PDFs you want to keep first.</p>
+            <label for="del-confirm">Type <b>DELETE</b> to confirm</label>
+            <div class="danger-row">
+              <input id="del-confirm" type="text" autocomplete="off" spellcheck="false" aria-describedby="del-help">
+              <button class="btn danger-btn" id="del-go" type="button" disabled>Delete everything</button>
+            </div>
+            <p class="note" id="del-help">See the <a href="/privacy">privacy policy</a> for what we store.</p>
+          </div>
+        </details>
       </div>
     </div>
   </section>
@@ -475,7 +487,7 @@
     </div>
   </section>
   <footer class="foot">
-    <span>&copy; <span id="foot-year">2026</span> Sarey.<span class="rights"> All rights reserved.</span></span>
+    <span>&copy; <span id="foot-year">2026</span> Sarey.<span class="rights"> All rights reserved.</span> <a href="/privacy">Privacy</a></span>
     <span class="by">A Sharat Patnayakuni product</span>
   </footer>
 </div>

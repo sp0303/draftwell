@@ -172,7 +172,10 @@ async function callOnce({ p, model }, messages, signal, maxTokens, key) {
       : code === 429 && /free-models-per-min|per[- ]min/i.test(text) ? 'minute' : null;
     const h = (body.error && body.error.metadata && body.error.metadata.headers) || {};
     const resetAt = Number(h['X-RateLimit-Reset'] || h['x-ratelimit-reset']) || null;
-    throw Object.assign(new Error(`${model}: ${code} ${text.slice(0, 200)}`), { tokens, busy: code === 429, denied: code === 401 || code === 403, scope, resetAt });
+    // OpenRouter answers 404 "...guardrail restrictions and data policy" when this account's
+    // privacy settings rule out the model's providers: the key's problem, not the model's.
+    const policy = code === 404 && /guardrail|data policy|privacy/i.test(text);
+    throw Object.assign(new Error(`${model}: ${code} ${text.slice(0, 200)}`), { tokens, busy: code === 429, denied: code === 401 || code === 403 || policy, policy, scope, resetAt });
   }
   if (!String(content).trim()) throw Object.assign(new Error(`${model}: empty reply`), { tokens });
   const json = parseJson(content);
@@ -231,11 +234,12 @@ async function callJson(task, messages, accept = () => true) {
         }
         if ((e.busy || e.denied) && keys.length > 1) {
           // This key is the problem: rest it and retry the same model on the next key.
-          if (e.denied) aistate.rest(kid(a.name, no), Date.now() + KEY_DENIED_MS, 'key rejected (401/403)');
+          if (e.denied) aistate.rest(kid(a.name, no), Date.now() + KEY_DENIED_MS, e.policy ? 'account privacy settings block free models (allow them at openrouter.ai/settings/privacy)' : 'key rejected (401/403)');
           else aistate.restBusy(kid(a.name, no));
           continue;
         }
-        if (e.denied) aistate.rest(pid(a.name), Date.now() + KEY_DENIED_MS, 'key rejected (401/403)');
+        if (e.policy) aistate.rest(mid(a.name, model), Date.now() + KEY_DENIED_MS, 'blocked by the account privacy settings');
+        else if (e.denied) aistate.rest(pid(a.name), Date.now() + KEY_DENIED_MS, 'key rejected (401/403)');
         else if (e.busy) aistate.restBusy(mid(a.name, model));
         else aistate.failure(mid(a.name, model)); // timed out, empty or bad reply: counts toward "failing"
         break; // move on to the next model

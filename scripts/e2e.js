@@ -137,6 +137,21 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
       calls.length = 0;
       for (let i = 0; i < 3; i++) await llm.jobKeywords('Dev\nReact');
       assert.deepEqual(calls, ['or@or-key-1', 'or@or-key-2', 'nv'], 'per-key daily counts: key 1, then key 2, then NVIDIA');
+
+      // A key whose account privacy settings block free models (404 "data policy"): the same
+      // model is retried on the other key, and the blocked key sits out.
+      await llm.resetLimits({ clearCount: true });
+      cfg.openrouterDailyLimit = 50;
+      global.fetch = async (url, opt) => {
+        const key = opt.headers.Authorization.replace('Bearer ', '');
+        calls.push(url.includes('nvidia') ? 'nv' : `or@${key}`);
+        if (key === 'or-key-1') return { ok: false, status: 404, json: async () => ({ error: { code: 404, message: '0 endpoints out of 1 requested are available matching your guardrail restrictions and data policy.' } }) };
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{"title":"Dev","keywords":[{"term":"React","required":true}]}' } }] }) };
+      };
+      calls.length = 0;
+      await llm.jobKeywords('Dev\nReact');
+      await llm.jobKeywords('Dev\nReact');
+      assert.deepEqual(calls, ['or@or-key-1', 'or@or-key-2', 'or@or-key-2'], 'a key blocked by its privacy settings hands over to the other key');
       cfg.openrouterDailyLimit = savedLimit;
       await llm.resetLimits({ clearCount: true });
       await llm.resetLimits({ clearCount: true });

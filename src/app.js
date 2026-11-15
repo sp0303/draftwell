@@ -113,11 +113,11 @@ function buildIndexHtml() {
 }
 
 const NOT_FOUND_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Page not found · Resumely</title><meta name="robots" content="noindex"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>Page not found · Resumely AI</title><meta name="robots" content="noindex"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>:root{--bg:#f7f6f2;--fg:#1d1c1a;--muted:#6b6862;--accent:#b8562f}@media (prefers-color-scheme:dark){:root{--bg:#1f1e1c;--fg:#f2f0ea;--muted:#a9a59c;--accent:#e07a52}}
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;padding:24px;box-sizing:border-box}
 h1{font-family:Georgia,serif;font-weight:600;font-size:34px;margin:0 0 8px}p{color:var(--muted);margin:0 0 20px}a{color:var(--accent);font-weight:600}</style></head>
-<body><main><h1>This page doesn't exist</h1><p>The link may be old or mistyped.</p><a href="/">Go to Resumely</a></main></body></html>`;
+<body><main><h1>This page doesn't exist</h1><p>The link may be old or mistyped.</p><a href="/">Go to Resumely AI</a></main></body></html>`;
 
 const safeFileName =(s) => (s || 'resume').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') || 'resume';
 
@@ -168,6 +168,20 @@ function createApp({ verifyGoogleCredential = auth.verifyGoogleCredential } = {}
     next();
   });
   app.get('/favicon.ico', (req, res) => res.type('png').sendFile(path.join(PUBLIC_DIR, 'favicon-32.png')));
+  // Sitemap with lastmod = when the landing page last changed (updates itself on deploy).
+  const lastmod = fs.statSync(path.join(PUBLIC_DIR, 'index.html')).mtime.toISOString().slice(0, 10);
+  app.get('/sitemap.xml', (req, res) => {
+    res.set('Cache-Control', 'public, max-age=3600').type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>${config.appUrl.replace(/\/$/, '')}/</loc>
+    <lastmod>${lastmod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>
+`);
+  });
   app.use(express.static(PUBLIC_DIR, {
     cacheControl: false,
     setHeaders(res, file) { if (file.endsWith('.webmanifest')) res.type('application/manifest+json'); },

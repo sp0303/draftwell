@@ -1,0 +1,20 @@
+# Resumely AI
+
+> Resumely AI is a free AI resume builder at https://resume.sarey.tech/. Upload an existing resume (PDF, Word or text), tailor it to a job description with AI, check its ATS match score out of 100, fix spelling and grammar, and download an ATS-friendly PDF.
+
+Resumely AI is a free personal project by Sharat Patnayakuni (Sarey). Sign-in is with Google. The AI runs on free models with daily limits.
+
+## What it does
+
+- AI resume builder: the AI reads an uploaded resume into an editable, structured resume.
+- Tailor to a job: paste a job description and the AI rewords existing experience in the job's language and moves the most relevant work first. It never adds skills, jobs or numbers the person doesn't have; missing requirements are listed instead.
+- ATS resume checker: scores the resume against the job out of 100 (job keywords 40, relevant experience 20, job title 15, readable format 15, specific results 10) and lists the keywords found and missing. The score is a guide to keyword-matching systems, not a promise from any employer.
+- AI spelling and grammar check with one-click fixes; names of people, companies and technologies are left alone.
+- Eight one-page, ATS-friendly resume templates (Classic, Modern, Minimal, Bold, Elegant, Timeline, Compact, Tech) and a PDF that matches the preview.
+- One copy per application: copy a resume and tailor it to the next job.
+- Chat with the AI to edit: "make my summary shorter", "add React to my skills".
+
+## Links
+
+- [Resumely AI home](https://resume.sarey.tech/): what it is, how it works, and the FAQ
+- [Sitemap](https://resume.sarey.tech/sitemap.xml)

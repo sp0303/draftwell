@@ -12,9 +12,9 @@ const page = (body, w, h) => `<!doctype html><html><head><meta charset="utf-8">
 
 const OG = `<div style="width:1200px;height:630px;background:#f7f6f2;color:#1d1c1a;font-family:Inter,sans-serif;display:grid;grid-template-columns:1.25fr 1fr;gap:48px;align-items:center;padding:64px 72px">
   <div>
-    <div style="display:flex;align-items:center;gap:14px;font-family:'Source Serif 4',serif;font-weight:700;font-size:34px">${MARK(52, 13)}Resumely</div>
+    <div style="display:flex;align-items:center;gap:14px;font-family:'Source Serif 4',serif;font-weight:700;font-size:34px">${MARK(52, 13)}Resumely <span style="font-family:'Space Grotesk',sans-serif;font-size:21px;color:#f7f6f2;background:#1d1c1a;border-radius:7px;padding:2px 9px">AI</span></div>
     <div style="font-family:'Source Serif 4',serif;font-weight:600;font-size:60px;line-height:1.05;letter-spacing:-.015em;margin-top:40px">100 job applications.<br>100 resumes.<br><span style="color:#b8562f;font-style:italic">Made easy.</span></div>
-    <div style="font-size:24px;color:#6b6862;margin-top:26px;line-height:1.4">Tailor your resume to every job with AI.<br>ATS match score included.</div>
+    <div style="font-size:24px;color:#6b6862;margin-top:26px;line-height:1.4">The free AI resume builder.<br>Tailored to every job, with an ATS score.</div>
   </div>
   <div style="background:#fff;border:1px solid #e3e0d7;border-radius:22px;padding:30px;box-shadow:0 2px 4px rgba(40,30,20,.06),0 18px 40px rgba(40,30,20,.12)">
     <div style="display:flex;gap:20px;align-items:center">

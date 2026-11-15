@@ -107,7 +107,7 @@ const PROVIDERS = {
     endpoint: 'https://openrouter.ai/api/v1/chat/completions',
     keys: () => (config.llm.provider === 'openrouter' ? config.llm.apiKeys : []), // one or more (LLM_API_KEY, comma separated)
     models: () => [config.llm.model, ...config.llm.fallbackModels],
-    headers: () => ({ 'HTTP-Referer': config.appUrl, 'X-Title': 'Resumely' }),
+    headers: () => ({ 'HTTP-Referer': config.appUrl, 'X-Title': 'Resumely AI' }),
     timeoutMs: 30000,
   },
   nvidia: {
@@ -290,7 +290,7 @@ async function chat({ data, theme, message, jd = '', history = [] }) {
   const messages = [
     {
       role: 'system',
-      content: `You are the editing assistant inside Resumely, a resume builder. The user asks for changes to their resume; you make them.
+      content: `You are the editing assistant inside Resumely AI, an AI resume builder. The user asks for changes to their resume; you make them.
 
 Reply with one JSON object only:
 {

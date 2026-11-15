@@ -212,7 +212,20 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
     s = await fetch(`${base}/site.webmanifest`); assert.match(s.headers.get('content-type'), /manifest\+json/);
     s = await fetch(`${base}/css/app.css?v=abc`); assert.match(s.headers.get('cache-control'), /immutable/);
     s = await fetch(`${base}/no-such-page`); assert.equal(s.status, 404); assert.match(await s.text(), /This page doesn't exist/);
-    ok('SEO: description, canonical, social card, structured data, robots, sitemap, favicon, manifest, 404 page');
+    // On-page checks from the SEO audit
+    assert.equal((html.match(/<h1[\s>]/g) || []).length, 1, 'exactly one H1');
+    assert.match(html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/)[1], /AI/);
+    const title = html.match(/<title>([^<]*)<\/title>/)[1].replace(/&amp;/g, '&');
+    assert.ok(title.length <= 60 && /Resumely AI/.test(title) && /AI Resume Builder/i.test(title), `title: ${title}`);
+    const desc = html.match(/<meta name="description" content="([^"]*)"/)[1];
+    assert.ok(desc.length >= 140 && desc.length <= 160, `description is ${desc.length} characters`);
+    const faqLd = JSON.parse(html.match(/<script type="application\/ld\+json">\s*(\{\s*"@context": "https:\/\/schema.org",\s*"@type": "FAQPage"[\s\S]*?)<\/script>/)[1]);
+    const visibleQs = [...html.matchAll(/<summary><h3>([\s\S]*?)<\/h3><\/summary>/g)].map((m) => m[1]);
+    assert.deepEqual(faqLd.mainEntity.map((q) => q.name), visibleQs, 'FAQ structured data matches the visible FAQ');
+    s = await fetch(`${base}/llms.txt`); assert.equal(s.status, 200); assert.match(await s.text(), /^# Resumely AI/);
+    s = await fetch(`${base}/sitemap.xml`); const sm = await s.text();
+    assert.match(sm, /<lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/); assert.match(sm, /<loc>http/);
+    ok('SEO: one H1 with AI, keyword title, description length, FAQ data matches the page, llms.txt, self-updating sitemap, canonical, social card, robots, 404');
 
     let r = await call('GET', '/api/sample');
     assert.equal(r.status, 200); assert.ok(r.json.name); ok('sample preview data is public');

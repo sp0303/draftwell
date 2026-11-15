@@ -1,7 +1,7 @@
 {
-  "name": "Resumely",
-  "short_name": "Resumely",
-  "description": "Tailor your resume to every job with AI, with an ATS match score.",
+  "name": "Resumely AI",
+  "short_name": "Resumely AI",
+  "description": "Free AI resume builder: tailor your resume to every job with AI and check your ATS score.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f7f6f2",

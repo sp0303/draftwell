@@ -566,3 +566,4 @@ p{margin:0}
 .pitem.pdanger{color:var(--danger)}
 .pitem.pdanger svg{color:var(--danger)}
 @media (max-width:560px){.pname{display:none}.pbtn{padding:3px 8px 3px 3px}}
+.qbar{display:inline-block;width:70px;height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden;vertical-align:middle;margin-right:6px}.qbar i{display:block;height:100%;background:var(--ok)}.qbar i.warm{background:var(--warn)}.qbar i.hot{background:var(--danger)}

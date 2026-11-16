@@ -12,6 +12,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
   process.env.LLM_API_KEY = ''; // keep the tests on the built-in rules, never a live model
   process.env.NVIDIA_API_KEY = '';
   process.env.LLM_ORDER = '';
+  process.env.GEMINI_API_KEY = '';
   process.env.ADMIN_EMAILS = 'boss@example.com';
   process.env.AI_STARTING_CREDITS = '100';
   const { parseJson } = require('../src/llm');
@@ -152,6 +153,39 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
       await llm.jobKeywords('Dev\nReact');
       await llm.jobKeywords('Dev\nReact');
       assert.deepEqual(calls, ['or@or-key-1', 'or@or-key-2', 'or@or-key-2'], 'a key blocked by its privacy settings hands over to the other key');
+
+      // Gemini tiers and quotas.
+      const quota = require('../src/quota');
+      const gemSaved = { ...cfg.gemini };
+      Object.assign(cfg.gemini, { apiKeys: ['g-key'] });
+      const okReply = { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{"title":"Dev","keywords":[{"term":"React","required":true}]}' } }] }) };
+      let sent = [];
+      global.fetch = async (url, opt) => {
+        const b = JSON.parse(opt.body);
+        calls.push(`${url.includes('generativelanguage') ? 'gem' : url.includes('nvidia') ? 'nv' : 'or'}:${b.model}`);
+        sent = b.messages;
+        return okReply;
+      };
+      // Within a tier, the model with the most room left today goes first (rotation).
+      await llm.resetLimits({ clearCount: true });
+      cfg.llm.order = ['gemini:gemini-3.6-flash|gemini:gemini-3.1-flash-lite', 'nvidia:nv-model'];
+      calls.length = 0;
+      for (let i = 0; i < 3; i++) await llm.jobKeywords('Dev\nReact');
+      assert.deepEqual(calls, ['gem:gemini-3.6-flash', 'gem:gemini-3.1-flash-lite', 'gem:gemini-3.1-flash-lite'], 'after one of its 20, 3.6 Flash has less room left than 3.1 Flash Lite (500)');
+      // A quota family at its per-minute limit is skipped without a call; 3.5 Flash counts as 3.6 Flash.
+      await llm.resetLimits({ clearCount: true });
+      for (let i = 0; i < 5; i++) quota.note('gemini', 1, 'gemini-3.5-flash', 100);
+      cfg.llm.order = ['gemini:gemini-3.6-flash', 'nvidia:nv-model'];
+      calls.length = 0;
+      await llm.jobKeywords('Dev\nReact');
+      assert.deepEqual(calls, ['nv:nv-model'], '3.6 Flash family full this minute: skipped, straight to the next tier');
+      // Gemma on the Gemini API gets the system message folded into the user turn.
+      await llm.resetLimits({ clearCount: true });
+      cfg.llm.order = ['gemini:gemma-4-31b-it'];
+      await llm.jobKeywords('Dev\nReact');
+      assert.equal(sent[0].role, 'user'); assert.ok(!sent.some((m) => m.role === 'system')); assert.match(sent[0].content, /applicant tracking system/);
+      Object.assign(cfg.gemini, gemSaved);
+      await llm.resetLimits({ clearCount: true });
       cfg.openrouterDailyLimit = savedLimit;
       await llm.resetLimits({ clearCount: true });
       await llm.resetLimits({ clearCount: true });
@@ -160,6 +194,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
     console.log('  ok  busy models cool down, empty replies fall through, reply cap per task, LLM_ORDER mixes providers, a rate-limited key hands over to the other key');
     console.log("  ok  OpenRouter's daily limit (it says so, or our per-key count reaches it) sends requests straight to the next key, then NVIDIA");
     console.log('  ok  models that keep failing go behind healthy ones');
+    console.log('  ok  Gemini: tiers rotate to the model with most room left, a full quota family is skipped without a call, Gemma gets no system message');
   }
   const db = require('../src/db');
   const { createApp } = require('../src/app');
@@ -476,7 +511,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
     await new Promise((res) => setTimeout(res, 200));
     assert.equal((await col('ai_state').findOne({ _id: 'model:openrouter|test-model' })).reason, 'test rest');
     r = await call('GET', '/api/admin/ai-routing');
-    assert.equal(r.status, 200); assert.ok(Array.isArray(r.json.models)); assert.ok(r.json.openrouterFree);
+    assert.equal(r.status, 200); assert.ok(Array.isArray(r.json.models)); assert.ok(Array.isArray(r.json.quotas));
     r = await call('POST', '/api/admin/ai-routing/reset');
     assert.equal(r.status, 200); assert.equal(await col('ai_state').countDocuments(), 0);
     ok('AI routing state is saved in the database; the admin can see it and reset it');

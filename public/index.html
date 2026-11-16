@@ -132,7 +132,7 @@
       "name": "Is my resume private?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "You sign in with Google, and only you can see your resumes. You can delete a resume at any time. When you use an AI feature, the resume text is sent to the AI provider that answers the request (OpenRouter or NVIDIA), and free AI providers may keep logs of what they receive."
+        "text": "You sign in with Google, and only you can see your resumes. You can delete a resume at any time. When you use an AI feature, the resume text is sent to the AI provider that answers the request (OpenRouter, NVIDIA or Google Gemini), and free AI providers may keep logs of what they receive."
       }
     }
   ]
@@ -285,7 +285,7 @@
           </details>
           <details>
             <summary><h3>Is my resume private?</h3></summary>
-            <p>You sign in with Google, and only you can see your resumes. You can delete a resume at any time. When you use an AI feature, the resume text is sent to the AI provider that answers the request (OpenRouter or NVIDIA), and free AI providers may keep logs of what they receive.</p>
+            <p>You sign in with Google, and only you can see your resumes. You can delete a resume at any time. When you use an AI feature, the resume text is sent to the AI provider that answers the request (OpenRouter, NVIDIA or Google Gemini), and free AI providers may keep logs of what they receive.</p>
           </details>
         </div>
       </section>
@@ -447,8 +447,15 @@
           </div>
           <div class="table-wrap">
             <table class="admin-table">
-              <thead><tr><th class="num">#</th><th>Provider</th><th>Model or key</th><th>State</th><th class="num">Avg time</th><th>Last answered</th></tr></thead>
+              <thead><tr><th class="num">Tier</th><th>Provider</th><th>Model or key</th><th>Quota family</th><th>State</th><th class="num">Avg time</th><th>Last answered</th></tr></thead>
               <tbody id="ai-routing"></tbody>
+            </table>
+          </div>
+          <div class="routing-head"><h3>Free quotas</h3><span class="routing-note">Today's and this minute's requests against each free limit, per key. Gemini's day resets at midnight Pacific, the others at midnight UTC.</span></div>
+          <div class="table-wrap">
+            <table class="admin-table">
+              <thead><tr><th>Provider</th><th>Quota family</th><th>Key</th><th>Today</th><th class="num">This minute</th><th class="num">Tokens / min</th><th>Day resets</th></tr></thead>
+              <tbody id="ai-quotas"></tbody>
             </table>
           </div>
         </div>

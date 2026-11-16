@@ -681,7 +681,7 @@
       drawAdmin(); drawAiUsage(ai); drawRouting(routing);
     } catch (e) { toast(e.message); }
   }
-  const PROVIDER = { openrouter: 'OpenRouter', nvidia: 'NVIDIA' };
+  const PROVIDER = { openrouter: 'OpenRouter', nvidia: 'NVIDIA', gemini: 'Gemini' };
   const secs = (ms) => `${(ms / 1000).toFixed(1)} s`;
   function drawAiUsage(a) {
     const t = a.totals;
@@ -722,16 +722,25 @@
     // providers (and their keys) that are resting or have several keys
     r.providers.forEach((p) => {
       if (p.state !== 'ready' || p.keys.length) {
-        rows.push(`<tr class="prow"><td class="num">—</td><td>${esc(PROVIDER[p.label] || p.label)}</td><td><b>Whole provider</b></td><td>${stateCell(p)}</td><td class="num">—</td><td>—</td></tr>`);
-        p.keys.forEach((k) => rows.push(`<tr class="prow"><td class="num">—</td><td>${esc(PROVIDER[p.label] || p.label)}</td><td>${esc(k.label)}</td><td>${stateCell(k)}</td><td class="num">${k.avgMs ? secs(k.avgMs) : '—'}</td><td>${k.lastOkAt ? when(k.lastOkAt) : '—'}</td></tr>`));
+        rows.push(`<tr class="prow"><td class="num">—</td><td>${esc(PROVIDER[p.label] || p.label)}</td><td><b>Whole provider</b></td><td>—</td><td>${stateCell(p)}</td><td class="num">—</td><td>—</td></tr>`);
+        p.keys.forEach((k) => rows.push(`<tr class="prow"><td class="num">—</td><td>${esc(PROVIDER[p.label] || p.label)}</td><td>${esc(k.label)}</td><td>—</td><td>${stateCell(k)}</td><td class="num">${k.avgMs ? secs(k.avgMs) : '—'}</td><td>${k.lastOkAt ? when(k.lastOkAt) : '—'}</td></tr>`));
       }
     });
-    r.models.forEach((m, i) => {
+    r.models.forEach((m) => {
       const p = prov[m.provider];
       const shown = p && p.state === 'resting' ? { ...p } : m; // a resting provider rests all its models
-      rows.push(`<tr><td class="num">${i + 1}</td><td>${esc(PROVIDER[m.provider] || m.provider)}</td><td class="mono">${esc(m.model)}</td><td>${stateCell(shown)}</td><td class="num">${m.avgMs ? secs(m.avgMs) : '—'}</td><td>${m.lastOkAt ? when(m.lastOkAt) : '—'}</td></tr>`);
+      const cell = m.full && shown.state === 'ready' ? `<span class="res warnc">Full</span> <span class="why">${esc(m.fullReason || 'limit reached')}</span>` : stateCell(shown);
+      rows.push(`<tr><td class="num">${m.tier}</td><td>${esc(PROVIDER[m.provider] || m.provider)}</td><td class="mono">${esc(m.model)}</td><td>${esc(m.family || '—')}</td><td>${cell}</td><td class="num">${m.avgMs ? secs(m.avgMs) : '—'}</td><td>${m.lastOkAt ? when(m.lastOkAt) : '—'}</td></tr>`);
     });
-    $('#ai-routing').innerHTML = rows.join('') || '<tr><td colspan="6" class="empty">No AI providers set up.</td></tr>';
+    $('#ai-routing').innerHTML = rows.join('') || '<tr><td colspan="7" class="empty">No AI providers set up.</td></tr>';
+    const bar = (n, max) => (max ? `<span class="qbar"><i style="width:${Math.min(100, Math.round((n / max) * 100))}%" class="${n >= max ? 'hot' : n >= max * 0.8 ? 'warm' : ''}"></i></span>` : '');
+    $('#ai-quotas').innerHTML = (r.quotas || []).flatMap((q) => q.keys.map((k) => `<tr>
+      <td>${esc(PROVIDER[q.provider] || q.provider)}</td><td>${esc(q.family)}</td><td>${q.keys.length > 1 ? `key ${k.key}` : '—'}</td>
+      <td>${q.rpd ? `${bar(k.today, q.rpd)} <b>${fmtN(k.today)}</b> / ${fmtN(q.rpd)}` : `${fmtN(k.today)} <span class="why">no daily limit</span>`}</td>
+      <td class="num">${fmtN(k.minute)}${q.rpm ? ` / ${fmtN(q.rpm)}` : ''}</td>
+      <td class="num">${q.tpm ? `${fmtN(k.minuteTokens)} / ${fmtN(q.tpm)}` : '—'}</td>
+      <td>${q.rpd ? new Date(q.resetsAt).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</td></tr>`)).join('')
+      || '<tr><td colspan="7" class="empty">No limits to show.</td></tr>';
   }
   $('#ai-reset').addEventListener('click', async () => {
     const b = $('#ai-reset');

@@ -31,12 +31,18 @@ module.exports = {
     fallbackModels: (process.env.LLM_FALLBACK_MODELS || '').split(',').map((s) => s.trim()).filter(Boolean),
     // Optional: one order across providers, e.g. "openrouter:baidu/ernie-5.5-flash-preview:free,nvidia:minimaxai/minimax-m3.1-flash".
     // Entries whose provider has no API key are skipped. Empty = OpenRouter models first, then NVIDIA.
-    order: (process.env.LLM_ORDER || '').split(',').map((s) => s.trim()).filter((s) => /^(openrouter|nvidia):./.test(s)),
+    // Tiers separated by commas, models within a tier by "|" (see llm.js).
+    order: (process.env.LLM_ORDER || '').split(',').map((s) => s.trim()).filter((s) => /^(openrouter|nvidia|gemini):./.test(s)),
   },
   // Second provider, tried after OpenRouter: NVIDIA API catalog (build.nvidia.com).
   nvidia: {
     // One key, or several separated by commas (requests take turns between them).
     apiKeys: (process.env.NVIDIA_API_KEY || '').split(',').map((s) => s.trim()).filter(Boolean),
     models: (process.env.NVIDIA_MODELS || 'minimaxai/minimax-m3.1-flash,nvidia/nemotron-3.5-lightning-30b-a3b').split(',').map((s) => s.trim()).filter(Boolean),
+  },
+  // Google's Gemini API (aistudio.google.com). Free-tier limits per model family are in quota.js.
+  gemini: {
+    apiKeys: (process.env.GEMINI_API_KEY || '').split(',').map((s) => s.trim()).filter(Boolean),
+    models: (process.env.GEMINI_MODELS || 'gemini-3.6-flash,gemini-3-flash-preview,gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemma-4-31b-it,gemma-4-26b-a4b-it').split(',').map((s) => s.trim()).filter(Boolean),
   },
 };

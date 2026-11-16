@@ -90,7 +90,22 @@
     }
   }
 
-  const api = { THEMES, ACCENTS, FONTS_URL, render, esc };
+  // A resume a little longer than one A4 page is shrunk to fit (down to 86%), the same way
+  // in the editor and in the PDF: the sheet is laid out wider, then scaled back to page width.
+  // Sets the sheet's width and returns the scale to draw it at (1 = no change).
+  function fitPage(s) {
+    const W = 794, H = 1123, MIN = 0.86;
+    s.style.width = ''; s.style.minHeight = '';
+    if (s.offsetHeight <= H + 2) return 1;
+    for (let f = 0.98; f >= MIN - 1e-9; f -= 0.02) {
+      s.style.width = `${W / f}px`;
+      if (s.offsetHeight * f <= H + 2) { s.style.minHeight = `${H / f}px`; return Math.round(f * 100) / 100; }
+    }
+    s.style.width = '';
+    return 1;
+  }
+
+  const api = { THEMES, ACCENTS, FONTS_URL, render, esc, fitPage };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Templates = api;
 })(typeof self !== 'undefined' ? self : this);

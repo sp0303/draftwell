@@ -34,12 +34,13 @@
     const s = w.querySelector('.sheet');
     if (!s) return;
     const k = w.clientWidth / 794;
-    s.style.transform = `scale(${k})`;
+    const f = Templates.fitPage(s); // same shrink-to-fit as the PDF
+    s.style.transform = `scale(${k * f})`;
     if (w.id === 'paper') {
-      const h = Math.max(1123, s.offsetHeight);
+      const h = Math.max(1123, s.offsetHeight * f);
       w.style.height = `${h * k}px`;
       let m = w.querySelector('.page-end');
-      const over = s.offsetHeight > 1125;
+      const over = s.offsetHeight * f > 1125;
       if (over && !m) { m = document.createElement('div'); m.className = 'page-end'; m.innerHTML = '<span>Page 1 ends here</span>'; w.appendChild(m); }
       if (m) { m.hidden = !over; m.style.top = `${1123 * k}px`; }
       setPageWarning(over);

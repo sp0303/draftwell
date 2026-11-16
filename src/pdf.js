@@ -23,7 +23,7 @@ function html(data, theme, accent) {
   return `<!doctype html><html><head><meta charset="utf-8">
 <link rel="stylesheet" href="${Templates.FONTS_URL}">
 <style>${resumeCss}</style>
-<style>@page{size:A4;margin:0}html,body{margin:0;background:#fff}.sheet{position:relative!important;transform:none!important}</style>
+<style>@page{size:A4;margin:0}html,body{margin:0;background:#fff;width:794px;overflow:hidden}.sheet{position:relative!important;transform-origin:0 0}</style>
 </head><body>${Templates.render(data, theme, accent)}</body></html>`;
 }
 
@@ -33,6 +33,9 @@ async function renderPdf(data, theme, accent) {
   try {
     await page.setContent(html(data, theme, accent), { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
     await page.evaluate(() => document.fonts.ready);
+    // Shrink a slightly-too-long resume onto one page, exactly as the editor preview does.
+    await page.evaluate(`(() => { const s = document.querySelector('.sheet'); const f = (${Templates.fitPage.toString()})(s);
+      if (f < 1) { s.style.transform = 'scale(' + f + ')'; document.documentElement.style.height = document.body.style.height = '1123px'; } })()`);
     return await page.pdf({ format: 'A4', printBackground: true, preferCSSPageSize: true });
   } finally {
     await page.close();

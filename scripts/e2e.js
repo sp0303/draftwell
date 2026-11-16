@@ -22,6 +22,27 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
   assert.equal(parseJson('no json here'), null);
   console.log('  ok  model replies with code fences or extra text are parsed');
   {
+    // Tailoring must not copy the job's years of experience or raise seniority.
+    const { keepYears } = require('../src/llm');
+    const before = { title: 'Software Development Engineer I', summary: 'Engineer with around 2 years of experience in Python', experience: [{ role: 'Software Development Engineer I' }] };
+    const after = { title: 'Senior Software Engineer II', summary: 'Engineer with 4-7 years of hands-on experience in Python and FastAPI' };
+    keepYears(before, after);
+    assert.equal(after.summary, 'Engineer with around 2 years of hands-on experience in Python and FastAPI');
+    assert.equal(after.title, 'Software Engineer');
+    console.log('  ok  tailoring keeps the stated years of experience and seniority');
+    // "Lead with relevant work" ignores roles with nothing relevant (a career break), so it can be fixed.
+    const ats = require('../src/ats');
+    const job = { title: 'Backend Engineer', keywords: [{ term: 'Python', required: true }] };
+    const d = { contact: [], experience: [
+      { role: 'Engineer', dates: '2024 – Present', bullets: ['Built APIs in Python'] },
+      { role: 'Career break', dates: '2023 – 2024', bullets: ['Prepared for exams'] },
+    ], skills: [], projects: [] };
+    assert.ok(!ats.score(d, job).fixes.some((f) => f.id === 'order'));
+    d.experience[0].bullets = ['Led standups', 'Built APIs in Python'];
+    assert.ok(ats.score(d, job).fixes.some((f) => f.id === 'order'));
+    console.log('  ok  "Lead with relevant work" only shows when moving bullets would help');
+  }
+  {
     // Model order with a fake provider: "busy" answers 429, "empty" answers nothing, "good" answers.
     const cfg = require('../src/config');
     const llm = require('../src/llm');

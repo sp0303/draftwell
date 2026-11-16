@@ -93,8 +93,10 @@ function titlePart(d, jobTitle) {
   return { score: Math.round(best * 15), max: 15 };
 }
 function relevancePart(d, kws) {
-  const roles = (d.experience || []).filter((e) => (e.bullets || []).length);
-  if (!roles.length || !kws.length) return { score: 0, max: 20 };
+  // Only roles with at least one relevant bullet count: a role with none (a career break,
+  // an unrelated job) can't be fixed by reordering, and shouldn't keep the tip coming back.
+  const roles = (d.experience || []).filter((e) => (e.bullets || []).some((b) => hasKw(b, kws)));
+  if (!roles.length || !kws.length) return { score: 0, max: 20, topShare: 1 };
   const topShare = roles.filter((e) => hasKw(e.bullets[0], kws)).length / roles.length;
   const b = allBullets(d);
   const bulletShare = b.filter((x) => hasKw(x, kws)).length / b.length;

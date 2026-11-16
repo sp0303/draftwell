@@ -1,6 +1,6 @@
 /* Resume templates. Paper is always white, so colors here are fixed on purpose.
    Used by the browser preview and by the server's PDF export. */
-.sheet{background:#fff;color:#1c1c1c;--ac:#1f3a5f;width:794px;min-height:1123px;position:relative}
+.sheet{box-sizing:border-box;background:#fff;color:#1c1c1c;--ac:#1f3a5f;width:794px;min-height:1123px;position:relative}
 .sheet *{box-sizing:border-box}
 .sheet ul{margin:0;padding-left:16px}
 .sheet li{margin:0 0 3px}

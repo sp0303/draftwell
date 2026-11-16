@@ -13,6 +13,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
   process.env.NVIDIA_API_KEY = '';
   process.env.LLM_ORDER = '';
   process.env.GEMINI_API_KEY = '';
+  process.env.GEMINI_TIER = ''; // free-tier limits in the routing tests
   process.env.ADMIN_EMAILS = 'boss@example.com';
   process.env.AI_STARTING_CREDITS = '100';
   const { parseJson } = require('../src/llm');

@@ -32,7 +32,10 @@ const DAY_TZ = { openrouter: 'UTC', nvidia: 'UTC', gemini: 'America/Los_Angeles'
 function limits() {
   let extra = [];
   try { extra = JSON.parse(process.env.LLM_LIMITS || '[]'); } catch (e) { console.error('LLM_LIMITS is not valid JSON; ignoring it'); }
-  const all = DEFAULTS.slice();
+  // Paid Gemini (billing on): Tier 1 allows hundreds of requests a minute, so only a daily
+  // spending guard applies to Gemini models. Gemma stays on its own (free) limits.
+  const all = DEFAULTS.map((d) => (d.provider === 'gemini' && config.gemini.paid && !/^Gemma/.test(d.family)
+    ? { ...d, rpm: 300, tpm: 2000000, rpd: config.gemini.dailyLimit } : d));
   extra.forEach((x) => {
     const i = all.findIndex((d) => d.provider === x.provider && d.family === x.family);
     if (i >= 0) all[i] = { ...all[i], ...x }; else all.push(x);

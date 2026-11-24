@@ -47,6 +47,6 @@ module.exports = {
     paid: (process.env.GEMINI_TIER || '').toLowerCase() === 'paid',
     dailyLimit: Number(process.env.GEMINI_DAILY_LIMIT) || 1500,
     apiKeys: (process.env.GEMINI_API_KEY || '').split(',').map((s) => s.trim()).filter(Boolean),
-    models: (process.env.GEMINI_MODELS || 'gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-3.5-flash,gemma-4-26b-a4b-it').split(',').map((s) => s.trim()).filter(Boolean),
+    models: (process.env.GEMINI_MODELS || 'gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-3.5-flash,gemma-4-26b-a4b-it').split(',').map((s) => s.trim()).filter(Boolean),
   },
 };
